@@ -156,17 +156,13 @@ fun MoviLishApp(viewModel: MainViewModel) {
 
     // Main App Shell
     Scaffold(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding(),
+        modifier = Modifier.fillMaxSize(),
         bottomBar = {
             NavigationBar(
                 containerColor = if (nightMode == NightModeOption.AMOLED_BLACK) Color.Black else Color(0xFF0F172A),
                 contentColor = Color.White,
                 tonalElevation = 0.dp,
-                modifier = Modifier
-                    .navigationBarsPadding()
-                    .testTag("main_bottom_nav")
+                modifier = Modifier.testTag("main_bottom_nav")
             ) {
                 // Tab 0: Library / Pustaka
                 NavigationBarItem(

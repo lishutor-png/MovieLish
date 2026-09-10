@@ -19,10 +19,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
@@ -158,17 +161,92 @@ fun GestureHudOverlay(
             }
         }
 
-        // Double Tap 10s Indicator
+        // Aspect Ratio Notification HUD
+        AnimatedVisibility(
+            visible = hudState.isVisible && hudState.gestureType == GestureType.ASPECT_RATIO,
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0xCC090D16), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0x4438BDF8), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .testTag("hud_aspect_ratio"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AspectRatio,
+                        contentDescription = "Rasio Layar",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = hudState.message.ifBlank { "Rasio Diubah" },
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Screen Lock Status HUD
+        AnimatedVisibility(
+            visible = hudState.isVisible && hudState.gestureType == GestureType.LOCK_INFO,
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(300))
+        ) {
+            val isLockedMsg = hudState.message.contains("Terkunci", ignoreCase = true)
+            Box(
+                modifier = Modifier
+                    .background(Color(0xCC090D16), RoundedCornerShape(16.dp))
+                    .border(1.dp, if (isLockedMsg) Color(0x66FBBF24) else Color(0x6638BDF8), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .testTag("hud_lock_info"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (isLockedMsg) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = "Status Kunci",
+                        tint = if (isLockedMsg) Color(0xFFFBBF24) else Color(0xFF38BDF8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = hudState.message,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Double Tap 10s Indicator (Positioned left or right based on seek direction)
         AnimatedVisibility(
             visible = doubleTapSeekDelta != null,
             enter = fadeIn(tween(80)),
-            exit = fadeOut(tween(300))
+            exit = fadeOut(tween(300)),
+            modifier = Modifier.align(if ((doubleTapSeekDelta ?: 0L) < 0) Alignment.CenterStart else Alignment.CenterEnd)
         ) {
             val isForward = (doubleTapSeekDelta ?: 0L) > 0
             Box(
                 modifier = Modifier
-                    .background(Color(0x99000000), CircleShape)
-                    .padding(18.dp),
+                    .padding(horizontal = 40.dp)
+                    .background(Color(0xDD090D16), RoundedCornerShape(24.dp))
+                    .border(1.5.dp, Color(0xFF38BDF8), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                    .testTag(if (isForward) "hud_double_tap_forward" else "hud_double_tap_rewind"),
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -176,14 +254,14 @@ fun GestureHudOverlay(
                         imageVector = if (isForward) Icons.Default.FastForward else Icons.Default.FastRewind,
                         contentDescription = "Double tap 10s",
                         tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(30.dp)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (isForward) "+10s" else "-10s",
+                        text = if (isForward) "+10 Detik" else "-10 Detik",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
+                        fontSize = 15.sp
                     )
                 }
             }

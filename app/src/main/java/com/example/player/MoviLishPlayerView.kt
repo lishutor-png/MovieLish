@@ -15,14 +15,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,8 +46,11 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -57,6 +64,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,9 +73,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -83,6 +91,7 @@ import com.example.ui.components.GestureHudOverlay
 import com.example.ui.components.SubtitleOverlay
 import com.example.ui.components.SubtitleSettingsSheet
 import com.example.ui.components.formatTime
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -112,7 +121,11 @@ fun MoviLishPlayerView(
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
     var aspectRatioMode by remember { mutableStateOf(AspectRatioMode.FIT) }
 
-    // Controls visibility & auto-hide
+    // Audio Mute State
+    var isMuted by remember { mutableStateOf(false) }
+    var savedVolumeBeforeMute by remember { mutableIntStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)) }
+
+    // Controls visibility & screen lock
     var showControls by remember { mutableStateOf(true) }
     var isLocked by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
@@ -128,10 +141,11 @@ fun MoviLishPlayerView(
     // Gesture State
     var gestureHudState by remember { mutableStateOf(PlayerGestureHudState()) }
     var doubleTapSeekDelta by remember { mutableStateOf<Long?>(null) }
-    var initialGestureBrightness by remember { mutableFloatStateOf(0.5f) }
-    var initialGestureVolume by remember { mutableFloatStateOf(0.5f) }
 
     val coroutineScope = rememberCoroutineScope()
+    var singleTapJob by remember { mutableStateOf<Job?>(null) }
+    var lastTapTimestamp by remember { mutableLongStateOf(0L) }
+    var lastTapPositionX by remember { mutableFloatStateOf(0f) }
 
     // Handle Back Press
     BackHandler {
@@ -143,7 +157,7 @@ fun MoviLishPlayerView(
         onBack()
     }
 
-    // Keep screen on while playing
+    // Keep screen on while player is active
     DisposableEffect(Unit) {
         val window = (context as? Activity)?.window
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -193,7 +207,7 @@ fun MoviLishPlayerView(
         }
     }
 
-    // Auto-hide controls timer
+    // Auto-hide controls timer (4.5s)
     LaunchedEffect(showControls, isPlaying) {
         if (showControls && isPlaying) {
             delay(4500)
@@ -223,69 +237,78 @@ fun MoviLishPlayerView(
             .background(Color.Black)
             .testTag("player_screen_root")
     ) {
-        val screenWidth = maxWidth
-        val screenHeight = maxHeight
+        // Surface / TextureView for Video with Aspect Ratio Mode
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            val videoModifier = when (aspectRatioMode) {
+                AspectRatioMode.FIT -> Modifier.fillMaxSize()
+                AspectRatioMode.FILL_CROP -> Modifier.fillMaxSize()
+                AspectRatioMode.RATIO_16_9 -> Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+                AspectRatioMode.RATIO_4_3 -> Modifier.fillMaxWidth().aspectRatio(4f / 3f)
+            }
 
-        // Surface / TextureView for Video
-        AndroidView(
-            factory = { ctx ->
-                TextureView(ctx).apply {
-                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                        override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                            val surface = Surface(surfaceTexture)
-                            val player = MediaPlayer().apply {
-                                setSurface(surface)
-                                try {
-                                    setDataSource(ctx, Uri.parse(media.fileUri))
-                                    prepareAsync()
-                                } catch (e: Exception) {
-                                    e.printStackTrace()
-                                }
-                                setOnPreparedListener { mp ->
-                                    isPrepared = true
-                                    isBuffering = false
-                                    totalDurationMs = mp.duration.toLong()
-                                    if (initialPositionMs in 1000 until totalDurationMs - 5000L) {
-                                        mp.seekTo(initialPositionMs.toInt())
+            AndroidView(
+                factory = { ctx ->
+                    TextureView(ctx).apply {
+                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                            override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                                val surface = Surface(surfaceTexture)
+                                val player = MediaPlayer().apply {
+                                    setSurface(surface)
+                                    try {
+                                        setDataSource(ctx, Uri.parse(media.fileUri))
+                                        prepareAsync()
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
                                     }
-                                    mp.start()
-                                    isPlaying = true
-                                }
-                                setOnBufferingUpdateListener { _, _ -> }
-                                setOnInfoListener { _, what, _ ->
-                                    if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                                        isBuffering = true
-                                    } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
+                                    setOnPreparedListener { mp ->
+                                        isPrepared = true
                                         isBuffering = false
+                                        totalDurationMs = mp.duration.toLong()
+                                        if (initialPositionMs in 1000 until totalDurationMs - 5000L) {
+                                            mp.seekTo(initialPositionMs.toInt())
+                                        }
+                                        mp.start()
+                                        isPlaying = true
                                     }
-                                    true
+                                    setOnBufferingUpdateListener { _, _ -> }
+                                    setOnInfoListener { _, what, _ ->
+                                        if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                                            isBuffering = true
+                                        } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
+                                            isBuffering = false
+                                        }
+                                        true
+                                    }
+                                    setOnCompletionListener {
+                                        isPlaying = false
+                                        onSavePosition(totalDurationMs, totalDurationMs, true)
+                                    }
                                 }
-                                setOnCompletionListener {
-                                    isPlaying = false
-                                    onSavePosition(totalDurationMs, totalDurationMs, true)
-                                }
+                                mediaPlayer = player
                             }
-                            mediaPlayer = player
-                        }
 
-                        override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-                        override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                            mediaPlayer?.let { player ->
-                                val pos = player.currentPosition.toLong()
-                                val dur = player.duration.toLong().coerceAtLeast(1L)
-                                onSavePosition(pos, dur, pos >= dur - 5000L)
-                                player.stop()
-                                player.release()
+                            override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
+                            override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                                mediaPlayer?.let { player ->
+                                    val pos = player.currentPosition.toLong()
+                                    val dur = player.duration.toLong().coerceAtLeast(1L)
+                                    onSavePosition(pos, dur, pos >= dur - 5000L)
+                                    player.stop()
+                                    player.release()
+                                }
+                                mediaPlayer = null
+                                return true
                             }
-                            mediaPlayer = null
-                            return true
+                            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
                         }
-                        override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
                     }
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
+                },
+                modifier = videoModifier
+            )
+        }
 
         // Subtitle Overlay (renders on top of video, below HUD/controls)
         SubtitleOverlay(
@@ -293,122 +316,169 @@ fun MoviLishPlayerView(
             config = subtitleStyleConfig
         )
 
-        // Gesture Touch Handler Layer
+        // Unified High-Responsiveness Gesture Touch Handler Layer
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(isLocked) {
                     if (isLocked) {
-                        detectTapGestures(
-                            onTap = { showControls = !showControls }
-                        )
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                if (change.changedToUp()) {
+                                    change.consume()
+                                    // Tapping when locked shows the lock hint
+                                    gestureHudState = PlayerGestureHudState(
+                                        gestureType = GestureType.LOCK_INFO,
+                                        message = "Layar Terkunci • Ketuk buka kunci",
+                                        isVisible = true
+                                    )
+                                    break
+                                }
+                            }
+                        }
                         return@pointerInput
                     }
 
-                    detectTapGestures(
-                        onDoubleTap = { offset ->
-                            val isRightSide = offset.x > size.width / 2
-                            val delta = if (isRightSide) 10000L else -10000L
-                            doubleTapSeekDelta = delta
-                            mediaPlayer?.let { player ->
-                                val target = (player.currentPosition + delta)
-                                    .coerceIn(0L, totalDurationMs)
-                                player.seekTo(target.toInt())
-                                currentPositionMs = target
-                            }
-                        },
-                        onTap = {
-                            showControls = !showControls
-                        }
-                    )
-                }
-                .pointerInput(isLocked) {
-                    if (isLocked) return@pointerInput
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val startX = down.position.x
+                        val startY = down.position.y
+                        val startTime = down.uptimeMillis
+                        var totalDragX = 0f
+                        var totalDragY = 0f
+                        var activeGesture = GestureType.NONE
+                        var gestureCommitted = false
+                        val startPositionMs = mediaPlayer?.currentPosition?.toLong() ?: 0L
 
-                    var totalDragX = 0f
-                    var totalDragY = 0f
-                    var activeGesture = GestureType.NONE
-                    var startPositionMs = 0L
+                        val window = (context as? Activity)?.window
+                        val curBright = window?.attributes?.screenBrightness ?: -1f
+                        val initBrightness = if (curBright < 0f) 0.5f else curBright
+                        val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val initVolume = curVol.toFloat() / maxVolume
 
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            totalDragX = 0f
-                            totalDragY = 0f
-                            startPositionMs = mediaPlayer?.currentPosition?.toLong() ?: 0L
-                            val isLeft = offset.x < size.width / 2
-                            activeGesture = if (isLeft) GestureType.BRIGHTNESS else GestureType.VOLUME
+                        val pointerId = down.id
 
-                            // read current brightness
-                            val window = (context as? Activity)?.window
-                            val curBright = window?.attributes?.screenBrightness ?: -1f
-                            initialGestureBrightness = if (curBright < 0f) 0.5f else curBright
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointerId } ?: break
 
-                            // read current volume
-                            val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                            initialGestureVolume = curVol.toFloat() / maxVolume
-                        },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDragX += dragAmount.x
-                            totalDragY += dragAmount.y
+                            if (change.changedToUp()) {
+                                change.consume()
+                                if (gestureCommitted) {
+                                    if (activeGesture == GestureType.SEEK) {
+                                        mediaPlayer?.seekTo(gestureHudState.seekTargetMs.toInt())
+                                        currentPositionMs = gestureHudState.seekTargetMs
+                                    }
+                                    coroutineScope.launch {
+                                        delay(800)
+                                        gestureHudState = gestureHudState.copy(isVisible = false)
+                                    }
+                                } else {
+                                    // Touch released before dragging -> Tap Detection
+                                    val elapsed = change.uptimeMillis - startTime
+                                    if (elapsed < 320L) {
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastTapTimestamp < 350L && abs(startX - lastTapPositionX) < 140f) {
+                                            // DOUBLE TAP DETECTED
+                                            singleTapJob?.cancel()
+                                            singleTapJob = null
+                                            lastTapTimestamp = 0L
 
-                            if (abs(totalDragX) > abs(totalDragY) * 1.5f && abs(totalDragX) > 20f) {
-                                // Horizontal Seek Gesture
-                                activeGesture = GestureType.SEEK
-                                val seekRatio = totalDragX / size.width
-                                val seekDelta = (seekRatio * 90000L).toLong() // +/- 90 seconds max per drag
-                                val target = (startPositionMs + seekDelta).coerceIn(0L, totalDurationMs)
+                                            val isRightSide = startX > size.width / 2
+                                            val delta = if (isRightSide) 10000L else -10000L
+                                            doubleTapSeekDelta = delta
 
-                                gestureHudState = PlayerGestureHudState(
-                                    gestureType = GestureType.SEEK,
-                                    seekTargetMs = target,
-                                    seekDeltaMs = seekDelta,
-                                    isVisible = true
-                                )
-                            } else if (activeGesture == GestureType.BRIGHTNESS) {
-                                // Left vertical drag: Brightness
-                                val delta = -totalDragY / size.height
-                                val newBright = (initialGestureBrightness + delta).coerceIn(0.05f, 1f)
-                                (context as? Activity)?.window?.let { win ->
-                                    val lp = win.attributes
-                                    lp.screenBrightness = newBright
-                                    win.attributes = lp
+                                            mediaPlayer?.let { player ->
+                                                val target = (player.currentPosition + delta).coerceIn(0L, totalDurationMs)
+                                                player.seekTo(target.toInt())
+                                                currentPositionMs = target
+                                            }
+                                        } else {
+                                            // FIRST TAP (wait briefly to distinguish single tap vs double tap)
+                                            lastTapTimestamp = now
+                                            lastTapPositionX = startX
+                                            singleTapJob?.cancel()
+                                            singleTapJob = coroutineScope.launch {
+                                                delay(300)
+                                                showControls = !showControls
+                                            }
+                                        }
+                                    }
                                 }
-                                gestureHudState = PlayerGestureHudState(
-                                    gestureType = GestureType.BRIGHTNESS,
-                                    valuePercent = newBright,
-                                    isVisible = true
-                                )
-                            } else if (activeGesture == GestureType.VOLUME) {
-                                // Right vertical drag: Volume
-                                val delta = -totalDragY / size.height
-                                val newVolPercent = (initialGestureVolume + delta).coerceIn(0f, 1f)
-                                val targetVol = (newVolPercent * maxVolume).toInt()
-                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                                break
+                            }
 
-                                gestureHudState = PlayerGestureHudState(
-                                    gestureType = GestureType.VOLUME,
-                                    valuePercent = newVolPercent,
-                                    isVisible = true
-                                )
+                            val dragX = change.position.x - startX
+                            val dragY = change.position.y - startY
+                            totalDragX = dragX
+                            totalDragY = dragY
+
+                            if (!gestureCommitted) {
+                                val distSq = dragX * dragX + dragY * dragY
+                                if (distSq > 400f) { // 20px threshold
+                                    singleTapJob?.cancel()
+                                    gestureCommitted = true
+                                    activeGesture = if (abs(dragX) > abs(dragY) * 1.15f) {
+                                        GestureType.SEEK
+                                    } else if (startX < size.width / 2) {
+                                        GestureType.BRIGHTNESS
+                                    } else {
+                                        GestureType.VOLUME
+                                    }
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            if (activeGesture == GestureType.SEEK) {
-                                mediaPlayer?.seekTo(gestureHudState.seekTargetMs.toInt())
-                                currentPositionMs = gestureHudState.seekTargetMs
-                            }
-                            // Auto-hide HUD after 1 second
-                            coroutineScope.launch {
-                                delay(900)
-                                gestureHudState = gestureHudState.copy(isVisible = false)
+
+                            if (gestureCommitted) {
+                                change.consume()
+                                when (activeGesture) {
+                                    GestureType.SEEK -> {
+                                        val seekRatio = totalDragX / size.width
+                                        val seekDelta = (seekRatio * 90000L).toLong()
+                                        val target = (startPositionMs + seekDelta).coerceIn(0L, totalDurationMs)
+                                        gestureHudState = PlayerGestureHudState(
+                                            gestureType = GestureType.SEEK,
+                                            seekTargetMs = target,
+                                            seekDeltaMs = seekDelta,
+                                            isVisible = true
+                                        )
+                                    }
+                                    GestureType.BRIGHTNESS -> {
+                                        val delta = -totalDragY / size.height
+                                        val newBright = (initBrightness + delta).coerceIn(0.05f, 1f)
+                                        (context as? Activity)?.window?.let { win ->
+                                            val lp = win.attributes
+                                            lp.screenBrightness = newBright
+                                            win.attributes = lp
+                                        }
+                                        gestureHudState = PlayerGestureHudState(
+                                            gestureType = GestureType.BRIGHTNESS,
+                                            valuePercent = newBright,
+                                            isVisible = true
+                                        )
+                                    }
+                                    GestureType.VOLUME -> {
+                                        val delta = -totalDragY / size.height
+                                        val newVolPercent = (initVolume + delta).coerceIn(0f, 1f)
+                                        val targetVol = (newVolPercent * maxVolume).toInt()
+                                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                                        gestureHudState = PlayerGestureHudState(
+                                            gestureType = GestureType.VOLUME,
+                                            valuePercent = newVolPercent,
+                                            isVisible = true
+                                        )
+                                    }
+                                    else -> {}
+                                }
                             }
                         }
-                    )
+                    }
                 }
         )
 
-        // Gesture HUD Overlay (Brightness / Volume / Seek / Double-Tap)
+        // Gesture HUD Overlay (Brightness / Volume / Seek / Double-Tap / Aspect Ratio / Lock Info)
         GestureHudOverlay(
             hudState = gestureHudState,
             doubleTapSeekDelta = doubleTapSeekDelta
@@ -435,7 +505,50 @@ fun MoviLishPlayerView(
             }
         }
 
-        // Lock button (always accessible when controls are visible or toggled)
+        // Floating Lock Status / Unlock Button (Visible when locked or toggled)
+        AnimatedVisibility(
+            visible = isLocked,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 28.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xDD0F172A))
+                    .border(1.dp, Color(0xFFFBBF24), RoundedCornerShape(20.dp))
+                    .clickable {
+                        isLocked = false
+                        showControls = true
+                        gestureHudState = PlayerGestureHudState(
+                            gestureType = GestureType.LOCK_INFO,
+                            message = "Kunci Layar Terbuka",
+                            isVisible = true
+                        )
+                    }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .testTag("btn_unlock_banner"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Lock,
+                    contentDescription = "Buka Kunci Layar",
+                    tint = Color(0xFFFBBF24),
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Layar Terkunci • Ketuk untuk membuka",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Lock Toggle Button at Center Left
         AnimatedVisibility(
             visible = showControls || isLocked,
             enter = fadeIn(),
@@ -447,11 +560,26 @@ fun MoviLishPlayerView(
             IconButton(
                 onClick = {
                     isLocked = !isLocked
-                    if (isLocked) showControls = false
+                    if (isLocked) {
+                        showControls = false
+                        gestureHudState = PlayerGestureHudState(
+                            gestureType = GestureType.LOCK_INFO,
+                            message = "Layar Dikunci",
+                            isVisible = true
+                        )
+                    } else {
+                        showControls = true
+                        gestureHudState = PlayerGestureHudState(
+                            gestureType = GestureType.LOCK_INFO,
+                            message = "Kunci Terbuka",
+                            isVisible = true
+                        )
+                    }
                 },
                 modifier = Modifier
-                    .background(Color(0x99090D16), CircleShape)
-                    .size(46.dp)
+                    .background(Color(0xCC090D16), CircleShape)
+                    .border(1.dp, if (isLocked) Color(0xFFFBBF24) else Color(0x33FFFFFF), CircleShape)
+                    .size(48.dp)
                     .testTag("btn_lock_screen")
             ) {
                 Icon(
@@ -475,12 +603,18 @@ fun MoviLishPlayerView(
                     .background(
                         Brush.verticalGradient(
                             listOf(
-                                Color(0xCC000000),
+                                Color(0xDD000000),
                                 Color.Transparent,
                                 Color(0xEE000000)
                             )
                         )
                     )
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        showControls = false
+                    }
                     .statusBarsPadding()
                     .navigationBarsPadding()
             ) {
@@ -488,7 +622,7 @@ fun MoviLishPlayerView(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
@@ -509,7 +643,7 @@ fun MoviLishPlayerView(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -540,6 +674,38 @@ fun MoviLishPlayerView(
                         )
                     }
 
+                    // Mute / Unmute Quick Audio Button
+                    IconButton(
+                        onClick = {
+                            if (isMuted) {
+                                val restoreVol = if (savedVolumeBeforeMute > 0) savedVolumeBeforeMute else (maxVolume / 2)
+                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, restoreVol, 0)
+                                isMuted = false
+                                gestureHudState = PlayerGestureHudState(
+                                    gestureType = GestureType.VOLUME,
+                                    valuePercent = restoreVol.toFloat() / maxVolume,
+                                    isVisible = true
+                                )
+                            } else {
+                                savedVolumeBeforeMute = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                                isMuted = true
+                                gestureHudState = PlayerGestureHudState(
+                                    gestureType = GestureType.VOLUME,
+                                    valuePercent = 0f,
+                                    isVisible = true
+                                )
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_quick_mute")
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.Default.VolumeOff else Icons.Default.VolumeUp,
+                            contentDescription = if (isMuted) "Nyalakan Suara" else "Bisukan Suara",
+                            tint = if (isMuted) Color(0xFFF87171) else Color.White
+                        )
+                    }
+
                     // Aspect Ratio Button
                     IconButton(
                         onClick = {
@@ -549,6 +715,11 @@ fun MoviLishPlayerView(
                                 AspectRatioMode.RATIO_16_9 -> AspectRatioMode.RATIO_4_3
                                 AspectRatioMode.RATIO_4_3 -> AspectRatioMode.FIT
                             }
+                            gestureHudState = PlayerGestureHudState(
+                                gestureType = GestureType.ASPECT_RATIO,
+                                message = "Rasio: ${aspectRatioMode.label}",
+                                isVisible = true
+                            )
                         },
                         modifier = Modifier.testTag("btn_aspect_ratio")
                     ) {
@@ -621,10 +792,10 @@ fun MoviLishPlayerView(
                     contentAlignment = Alignment.Center
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        horizontalArrangement = Arrangement.spacedBy(32.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Rewind 10s
+                        // Rewind 10s Button
                         IconButton(
                             onClick = {
                                 doubleTapSeekDelta = -10000L
@@ -636,22 +807,28 @@ fun MoviLishPlayerView(
                             },
                             modifier = Modifier
                                 .background(Color(0x66090D16), CircleShape)
-                                .size(48.dp)
+                                .size(52.dp)
                                 .testTag("btn_rewind_10s")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.FastRewind,
                                 contentDescription = "Mundur 10 Detik",
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
                             )
                         }
 
-                        // Play / Pause
+                        // Play / Pause / Replay Button
+                        val isVideoEnded = !isPlaying && currentPositionMs >= totalDurationMs - 1500L && totalDurationMs > 0
                         IconButton(
                             onClick = {
                                 mediaPlayer?.let { player ->
-                                    if (player.isPlaying) {
+                                    if (isVideoEnded) {
+                                        player.seekTo(0)
+                                        player.start()
+                                        isPlaying = true
+                                        currentPositionMs = 0L
+                                    } else if (player.isPlaying) {
                                         player.pause()
                                         isPlaying = false
                                         onSavePosition(player.currentPosition.toLong(), totalDurationMs, false)
@@ -662,19 +839,28 @@ fun MoviLishPlayerView(
                                 }
                             },
                             modifier = Modifier
-                                .background(Color(0xFF0284C7), CircleShape)
-                                .size(64.dp)
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(Color(0xFF0284C7), Color(0xFF38BDF8))
+                                    ),
+                                    CircleShape
+                                )
+                                .size(68.dp)
                                 .testTag("btn_play_pause")
                         ) {
                             Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                imageVector = when {
+                                    isVideoEnded -> Icons.Default.Replay
+                                    isPlaying -> Icons.Default.Pause
+                                    else -> Icons.Default.PlayArrow
+                                },
                                 contentDescription = if (isPlaying) "Jeda" else "Putar",
                                 tint = Color.White,
-                                modifier = Modifier.size(38.dp)
+                                modifier = Modifier.size(40.dp)
                             )
                         }
 
-                        // Forward 10s
+                        // Forward 10s Button
                         IconButton(
                             onClick = {
                                 doubleTapSeekDelta = 10000L
@@ -686,24 +872,24 @@ fun MoviLishPlayerView(
                             },
                             modifier = Modifier
                                 .background(Color(0x66090D16), CircleShape)
-                                .size(48.dp)
+                                .size(52.dp)
                                 .testTag("btn_forward_10s")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.FastForward,
                                 contentDescription = "Maju 10 Detik",
                                 tint = Color.White,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(30.dp)
                             )
                         }
                     }
                 }
 
-                // Bottom Timeline & Controls Bar
+                // Bottom Timeline & Quick Action Controls Bar
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                        .padding(horizontal = 20.dp, vertical = 6.dp)
                 ) {
                     // Timeline Slider
                     Slider(
@@ -725,44 +911,70 @@ fun MoviLishPlayerView(
                             .testTag("player_progress_slider")
                     )
 
-                    // Timestamps & Badge
+                    // Timestamps & Status Badges
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "${formatTime(currentPositionMs)} / ${formatTime(totalDurationMs)}",
-                            color = Color(0xFFE2E8F0),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = formatTime(currentPositionMs),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = " / ${formatTime(totalDurationMs)}",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp
+                            )
+                            val remainingMs = (totalDurationMs - currentPositionMs).coerceAtLeast(0L)
+                            if (remainingMs > 0) {
+                                Text(
+                                    text = " (-${formatTime(remainingMs)})",
+                                    color = Color(0xFF64748B),
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(start = 4.dp)
+                                )
+                            }
+                        }
 
+                        // Badges (CC / Speed / Ratio)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (playbackSpeed != 1.0f) {
+                            // Subtitle pill
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (selectedSubtitleTrackId != null) Color(0x3338BDF8) else Color(0x22FFFFFF))
+                                    .clickable { showSubtitleSheet = true }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
                                 Text(
-                                    text = "${playbackSpeed}x",
-                                    color = Color(0xFF38BDF8),
-                                    fontSize = 12.sp,
+                                    text = if (selectedSubtitleTrackId != null) "CC AKTIF" else "CC MATI",
+                                    color = if (selectedSubtitleTrackId != null) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            if (selectedSubtitleTrackId != null) {
-                                Box(
-                                    modifier = Modifier
-                                        .background(Color(0x3338BDF8), RoundedCornerShape(4.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "CC ON",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+
+                            // Speed pill
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (playbackSpeed != 1.0f) Color(0x3338BDF8) else Color(0x22FFFFFF))
+                                    .clickable { showSpeedMenu = true }
+                                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "${playbackSpeed}x",
+                                    color = if (playbackSpeed != 1.0f) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
