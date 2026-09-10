@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Lock
@@ -88,6 +89,7 @@ import com.example.data.model.SubtitleCue
 import com.example.data.model.SubtitleStyleConfig
 import com.example.data.model.SubtitleTrack
 import com.example.ui.components.GestureHudOverlay
+import com.example.ui.components.SleepTimerSheet
 import com.example.ui.components.SubtitleOverlay
 import com.example.ui.components.SubtitleSettingsSheet
 import com.example.ui.components.formatTime
@@ -130,6 +132,9 @@ fun MoviLishPlayerView(
     var isLocked by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showSubtitleSheet by remember { mutableStateOf(false) }
+    var showSleepTimerSheet by remember { mutableStateOf(false) }
+    var sleepTimerState by remember { mutableStateOf(SleepTimerState()) }
+    var sleepTimerRemainingSeconds by remember { mutableLongStateOf(0L) }
 
     // Active Subtitle
     var selectedSubtitleTrackId by remember {
@@ -228,6 +233,48 @@ fun MoviLishPlayerView(
         if (doubleTapSeekDelta != null) {
             delay(650)
             doubleTapSeekDelta = null
+        }
+    }
+
+    // Sleep Timer countdown & auto-pause engine
+    LaunchedEffect(sleepTimerState, isPlaying) {
+        while (sleepTimerState.option != SleepTimerOption.OFF && isPlaying) {
+            if (sleepTimerState.option == SleepTimerOption.END_OF_VIDEO) {
+                if (currentPositionMs >= totalDurationMs - 1500L && totalDurationMs > 0) {
+                    mediaPlayer?.pause()
+                    isPlaying = false
+                    sleepTimerState = SleepTimerState()
+                    gestureHudState = PlayerGestureHudState(
+                        gestureType = GestureType.SLEEP_TIMER,
+                        message = "🌙 Waktu Tidur • Video Selesai",
+                        isVisible = true
+                    )
+                    break
+                }
+            } else {
+                val remaining = (sleepTimerState.targetTimestampMs - System.currentTimeMillis()) / 1000
+                sleepTimerRemainingSeconds = remaining.coerceAtLeast(0)
+                if (remaining <= 0) {
+                    mediaPlayer?.pause()
+                    isPlaying = false
+                    val wasFaded = sleepTimerState.fadeOutAudio
+                    sleepTimerState = SleepTimerState()
+                    gestureHudState = PlayerGestureHudState(
+                        gestureType = GestureType.SLEEP_TIMER,
+                        message = "🌙 Waktu Tidur Tiba • Pemutaran Dijeda",
+                        isVisible = true
+                    )
+                    if (wasFaded && savedVolumeBeforeMute > 0) {
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, savedVolumeBeforeMute, 0)
+                    }
+                    break
+                } else if (sleepTimerState.fadeOutAudio && remaining in 1..60) {
+                    val factor = remaining.toFloat() / 60f
+                    val targetVol = (savedVolumeBeforeMute * factor).toInt().coerceAtLeast(0)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, targetVol, 0)
+                }
+            }
+            delay(1000)
         }
     }
 
@@ -730,6 +777,18 @@ fun MoviLishPlayerView(
                         )
                     }
 
+                    // Sleep Timer (Bedtime) Button
+                    IconButton(
+                        onClick = { showSleepTimerSheet = true },
+                        modifier = Modifier.testTag("btn_sleep_timer")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bedtime,
+                            contentDescription = "Timer Tidur",
+                            tint = if (sleepTimerState.option != SleepTimerOption.OFF) Color(0xFFFBBF24) else Color.White
+                        )
+                    }
+
                     // Subtitle Button
                     IconButton(
                         onClick = { showSubtitleSheet = true },
@@ -976,6 +1035,41 @@ fun MoviLishPlayerView(
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+
+                            // Sleep Timer Active Pill
+                            if (sleepTimerState.option != SleepTimerOption.OFF) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0x33FBBF24))
+                                        .border(1.dp, Color(0x66FBBF24), RoundedCornerShape(6.dp))
+                                        .clickable { showSleepTimerSheet = true }
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        .testTag("pill_sleep_timer")
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bedtime,
+                                            contentDescription = null,
+                                            tint = Color(0xFFFBBF24),
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = if (sleepTimerState.option == SleepTimerOption.END_OF_VIDEO) {
+                                                "TIDUR: SELESAI"
+                                            } else {
+                                                val mins = (sleepTimerRemainingSeconds / 60).coerceAtLeast(0)
+                                                val secs = (sleepTimerRemainingSeconds % 60).coerceAtLeast(0)
+                                                "TIDUR: ${mins}m ${secs}s"
+                                            },
+                                            color = Color(0xFFFBBF24),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -997,6 +1091,37 @@ fun MoviLishPlayerView(
                     showSubtitleSheet = false
                 },
                 onDismiss = { showSubtitleSheet = false }
+            )
+        }
+
+        // Sleep Timer Bottom Sheet
+        if (showSleepTimerSheet) {
+            SleepTimerSheet(
+                state = sleepTimerState,
+                onSetTimer = { newState ->
+                    sleepTimerState = newState
+                    showSleepTimerSheet = false
+                    if (newState.option != SleepTimerOption.OFF) {
+                        val msg = if (newState.option == SleepTimerOption.END_OF_VIDEO) {
+                            "Timer: Berhenti di akhir video"
+                        } else {
+                            val mins = ((newState.targetTimestampMs - System.currentTimeMillis()) / 60000L).coerceAtLeast(1)
+                            "Timer tidur: $mins menit"
+                        }
+                        gestureHudState = PlayerGestureHudState(
+                            gestureType = GestureType.SLEEP_TIMER,
+                            message = msg,
+                            isVisible = true
+                        )
+                    } else {
+                        gestureHudState = PlayerGestureHudState(
+                            gestureType = GestureType.SLEEP_TIMER,
+                            message = "Timer tidur dinonaktifkan",
+                            isVisible = true
+                        )
+                    }
+                },
+                onDismiss = { showSleepTimerSheet = false }
             )
         }
     }

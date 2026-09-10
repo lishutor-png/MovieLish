@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Gesture
@@ -62,21 +63,8 @@ fun SettingsScreen(
         item {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0x3338BDF8)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            tint = Color(0xFF38BDF8),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
+                    com.example.ui.components.MoviLishCinemaLogo(size = 38.dp)
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = "Pengaturan MoviLish",
                         fontSize = 19.sp,
@@ -86,7 +74,7 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Sesuaikan tampilan mode malam, gestur kontrol, dan perilaku subtitle.",
+                    text = "Sesuaikan tampilan mode malam, timer tidur, gestur kontrol, dan perilaku subtitle.",
                     color = Color(0xFF94A3B8),
                     fontSize = 13.sp
                 )
@@ -317,6 +305,35 @@ fun SettingsScreen(
             }
         }
 
+        // Sleep Timer Feature Info
+        item {
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color(0xFFFBBF24))
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Timer Tidur Sinema (Sleep Timer)",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Dapat diakses langsung dari pemutar video (ikon bulan di bilah atas). Anda bisa memilih 15m, 30m, 45m, 60m, waktu kustom, atau 'Akhir Video Ini'. Dilengkapi fitur Fade Out untuk meredupkan volume suara secara lembut sebelum video berhenti.",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
+        }
+
         // About MoviLish
         item {
             Card(
@@ -326,18 +343,25 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFF38BDF8))
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Tentang MoviLish",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        com.example.ui.components.MoviLishCinemaLogo(size = 32.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Tentang MoviLish",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Pemutar Video Sinema Minimalis & Cerdas",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
                     }
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "MoviLish v1.0.0 • Pemutar Video Sinema Minimalis & Cerdas dengan Room Database, Auto Subtitle, dan Sinkronisasi Multi-Perangkat.",
+                        text = "MoviLish v1.0.0 • Dilengkapi Room Database, Auto Subtitle, Timer Tidur Cerdas, Sinkronisasi Cloud, dan Kontrol Gestur Sinema.",
                         color = Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )

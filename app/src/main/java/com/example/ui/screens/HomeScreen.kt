@@ -133,24 +133,7 @@ fun HomeScreen(
         ) {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    listOf(Color(0xFF0284C7), Color(0xFF38BDF8))
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Movie,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
+                    com.example.ui.components.MoviLishCinemaLogo(size = 38.dp)
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "MoviLish",

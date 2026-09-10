@@ -3,6 +3,6 @@
     <item
         android:width="66dp"
         android:height="66dp"
-        android:drawable="@drawable/ic_movilish_logo_1789026428172"
+        android:drawable="@drawable/ic_movilish_flat_cinema_1789041477653"
         android:gravity="center" />
 </layer-list>

@@ -13,8 +13,27 @@ enum class GestureType {
     VOLUME,
     SEEK,
     ASPECT_RATIO,
-    LOCK_INFO
+    LOCK_INFO,
+    SLEEP_TIMER
 }
+
+enum class SleepTimerOption(val label: String, val minutes: Int) {
+    OFF("Nonaktif", 0),
+    MIN_15("15 Menit", 15),
+    MIN_30("30 Menit", 30),
+    MIN_45("45 Menit", 45),
+    MIN_60("60 Menit", 60),
+    CUSTOM("Kustom", -2),
+    END_OF_VIDEO("Akhir Video Ini", -1)
+}
+
+data class SleepTimerState(
+    val option: SleepTimerOption = SleepTimerOption.OFF,
+    val targetTimestampMs: Long = 0L,
+    val customMinutes: Int = 15,
+    val isCustom: Boolean = false,
+    val fadeOutAudio: Boolean = true
+)
 
 data class PlayerGestureHudState(
     val gestureType: GestureType = GestureType.NONE,

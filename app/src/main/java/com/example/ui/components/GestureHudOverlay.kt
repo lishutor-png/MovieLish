@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.FastForward
@@ -219,6 +220,41 @@ fun GestureHudOverlay(
                         imageVector = if (isLockedMsg) Icons.Default.Lock else Icons.Default.LockOpen,
                         contentDescription = "Status Kunci",
                         tint = if (isLockedMsg) Color(0xFFFBBF24) else Color(0xFF38BDF8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = hudState.message,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Sleep Timer Status HUD
+        AnimatedVisibility(
+            visible = hudState.isVisible && hudState.gestureType == GestureType.SLEEP_TIMER,
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0xEE090D16), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .testTag("hud_sleep_timer_info"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Bedtime,
+                        contentDescription = "Timer Tidur",
+                        tint = Color(0xFF38BDF8),
                         modifier = Modifier.size(28.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
