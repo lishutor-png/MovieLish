@@ -1,0 +1,6 @@
+{
+  "name": "MoviLish",
+  "description": "Pemutar video cerdas dengan subtitle otomatis, integrasi penyimpanan awan, pemindaian pustaka film dan serial TV, serta kontrol gestur intuitif.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

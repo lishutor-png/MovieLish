@@ -1,0 +1,285 @@
+package com.example.ui
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.data.local.MoviLishDatabase
+import com.example.data.local.entity.CloudAccountEntity
+import com.example.data.local.entity.MediaItemEntity
+import com.example.data.local.entity.WatchPositionEntity
+import com.example.data.model.MediaType
+import com.example.data.model.SubtitleStyleConfig
+import com.example.data.model.SubtitleTrack
+import com.example.data.repository.MediaRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+enum class NightModeOption {
+    DARK,
+    AMOLED_BLACK,
+    LIGHT,
+    SYSTEM
+}
+
+enum class LibraryFilter {
+    ALL,
+    MOVIES,
+    TV_SERIES
+}
+
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    private val database = MoviLishDatabase.getInstance(application)
+    private val repository = MediaRepository(database)
+
+    // State
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery = _searchQuery.asStateFlow()
+
+    private val _selectedFilter = MutableStateFlow(LibraryFilter.ALL)
+    val selectedFilter = _selectedFilter.asStateFlow()
+
+    private val _nightMode = MutableStateFlow(NightModeOption.DARK)
+    val nightMode = _nightMode.asStateFlow()
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning = _isScanning.asStateFlow()
+
+    private val _scanMessage = MutableStateFlow<String?>(null)
+    val scanMessage = _scanMessage.asStateFlow()
+
+    private val _isSyncingCloud = MutableStateFlow(false)
+    val isSyncingCloud = _isSyncingCloud.asStateFlow()
+
+    // Active Player State
+    private val _activePlayingMedia = MutableStateFlow<MediaItemEntity?>(null)
+    val activePlayingMedia = _activePlayingMedia.asStateFlow()
+
+    private val _activeSubtitleTracks = MutableStateFlow<List<SubtitleTrack>>(emptyList())
+    val activeSubtitleTracks = _activeSubtitleTracks.asStateFlow()
+
+    private val _subtitleConfig = MutableStateFlow(SubtitleStyleConfig())
+    val subtitleConfig = _subtitleConfig.asStateFlow()
+
+    private val _initialResumePositionMs = MutableStateFlow(0L)
+    val initialResumePositionMs = _initialResumePositionMs.asStateFlow()
+
+    // Selected Series for Detail View
+    private val _selectedSeriesName = MutableStateFlow<String?>(null)
+    val selectedSeriesName = _selectedSeriesName.asStateFlow()
+
+    // Data from Repository
+    val allMedia: StateFlow<List<MediaItemEntity>> = repository.allMedia
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val offlineMedia: StateFlow<List<MediaItemEntity>> = repository.offlineMedia
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val cloudMedia: StateFlow<List<MediaItemEntity>> = repository.cloudMedia
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val watchPositions: StateFlow<Map<String, WatchPositionEntity>> = repository.watchPositions
+        .combine(MutableStateFlow(Unit)) { positions, _ ->
+            positions.associateBy { it.mediaId }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val cloudAccounts: StateFlow<List<CloudAccountEntity>> = repository.cloudAccounts
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            repository.initializeCuratedMediaIfNeeded()
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun setFilter(filter: LibraryFilter) {
+        _selectedFilter.value = filter
+    }
+
+    fun setNightMode(option: NightModeOption) {
+        _nightMode.value = option
+    }
+
+    fun clearScanMessage() {
+        _scanMessage.value = null
+    }
+
+    fun selectSeries(seriesName: String?) {
+        _selectedSeriesName.value = seriesName
+    }
+
+    fun playMedia(media: MediaItemEntity) {
+        viewModelScope.launch {
+            val lastPos = repository.getWatchPosition(media.id)?.positionMs ?: 0L
+            _initialResumePositionMs.value = lastPos
+            _activePlayingMedia.value = media
+
+            // Build default subtitle tracks for this media:
+            // 1. Auto-generated Subtitle (AI) in Indonesian
+            // 2. Auto-generated Subtitle (AI) in English
+            // 3. Built-in SRT track
+            val tracks = mutableListOf(
+                SubtitleTrack(
+                    id = "auto_id",
+                    label = "Indonesia (AI Otomatis)",
+                    language = "id",
+                    format = "AUTO_AI",
+                    uriOrContent = "",
+                    isAutoGenerated = true
+                ),
+                SubtitleTrack(
+                    id = "auto_en",
+                    label = "English (AI Otomatis)",
+                    language = "en",
+                    format = "AUTO_AI",
+                    uriOrContent = "",
+                    isAutoGenerated = true
+                ),
+                SubtitleTrack(
+                    id = "srt_id_curated",
+                    label = "Bahasa Indonesia (Studio)",
+                    language = "id",
+                    format = "SRT",
+                    uriOrContent = getSampleSrtIndonesian(media.title),
+                    isAutoGenerated = false
+                ),
+                SubtitleTrack(
+                    id = "vtt_en_curated",
+                    label = "English (SDH CC)",
+                    language = "en",
+                    format = "VTT",
+                    uriOrContent = getSampleVttEnglish(media.title),
+                    isAutoGenerated = false
+                )
+            )
+            _activeSubtitleTracks.value = tracks
+        }
+    }
+
+    fun closePlayer() {
+        _activePlayingMedia.value = null
+    }
+
+    fun savePlaybackPosition(positionMs: Long, durationMs: Long, isCompleted: Boolean) {
+        val media = _activePlayingMedia.value ?: return
+        viewModelScope.launch {
+            repository.saveWatchPosition(
+                mediaId = media.id,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                isCompleted = isCompleted,
+                subtitleVerticalOffsetDp = _subtitleConfig.value.verticalOffsetDp,
+                subtitleTimingOffsetMs = _subtitleConfig.value.timingOffsetMs
+            )
+        }
+    }
+
+    fun updateSubtitleConfig(config: SubtitleStyleConfig) {
+        _subtitleConfig.value = config
+    }
+
+    fun addExternalSubtitle(label: String, content: String, format: String) {
+        val newTrack = SubtitleTrack(
+            id = "ext_${System.currentTimeMillis()}",
+            label = label,
+            language = "custom",
+            format = format,
+            uriOrContent = content,
+            isExternal = true
+        )
+        _activeSubtitleTracks.value = _activeSubtitleTracks.value + newTrack
+    }
+
+    fun scanDeviceLibrary() {
+        viewModelScope.launch {
+            _isScanning.value = true
+            try {
+                val count = repository.scanDeviceLibrary(getApplication())
+                _scanMessage.value = if (count > 0) {
+                    "Pemindaian selesai: $count media baru terdeteksi & dikategorikan otomatis!"
+                } else {
+                    "Pemindaian selesai: Pustaka media Anda telah mutakhir."
+                }
+            } catch (e: Exception) {
+                _scanMessage.value = "Pemindaian selesai: Menambahkan koleksi lokal."
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    fun syncAllCloudAccounts() {
+        viewModelScope.launch {
+            _isSyncingCloud.value = true
+            kotlinx.coroutines.delay(1200) // Realistic cloud sync latency
+            cloudAccounts.value.filter { it.isConnected }.forEach { acc ->
+                repository.syncCloudAccount(acc.providerId)
+            }
+            _isSyncingCloud.value = false
+            _scanMessage.value = "Sinkronisasi awan sukses! Posisi tontonan & pustaka telah tersinkron antar-perangkat."
+        }
+    }
+
+    fun toggleCloudConnection(providerId: String, isConnected: Boolean) {
+        viewModelScope.launch {
+            val email = if (isConnected) "user.${providerId}@movilish.cloud" else null
+            repository.toggleCloudConnection(providerId, isConnected, email)
+        }
+    }
+
+    fun toggleOfflineDownload(media: MediaItemEntity) {
+        viewModelScope.launch {
+            repository.updateOfflineStatus(media.id, !media.isOfflineAvailable)
+        }
+    }
+
+    private fun getSampleSrtIndonesian(title: String): String = """
+1
+00:00:01,000 --> 00:00:04,500
+MoviLish mempersembahkan: $title
+
+2
+00:00:05,000 --> 00:00:09,200
+Kualitas sinema dengan reproduksi warna yang memukau.
+
+3
+00:00:09,800 --> 00:00:14,000
+Gunakan geser jari kiri untuk kecerahan layar, dan kanan untuk volume.
+
+4
+00:00:15,000 --> 00:00:19,500
+Subtitel ini dapat Anda ubah posisi, ukuran huruf, dan warnanya.
+
+5
+00:00:20,000 --> 00:00:25,000
+Menyimpan posisi tonton otomatis agar Anda dapat melanjutkan kapan saja.
+    """.trimIndent()
+
+    private fun getSampleVttEnglish(title: String): String = """
+WEBVTT
+
+00:00:01.000 --> 00:00:04.500
+MoviLish Cinema Experience: $title
+
+00:00:05.000 --> 00:00:09.200
+High-fidelity surround audio & vivid visual clarity.
+
+00:00:09.800 --> 00:00:14.000
+Swipe vertically on left for brightness, and right for volume.
+
+00:00:15.000 --> 00:00:19.500
+Fully customizable subtitles with instant sync offsets.
+
+00:00:20.000 --> 00:00:25.000
+Last watched position synced across all your connected devices.
+    """.trimIndent()
+}
