@@ -18,7 +18,7 @@ import com.example.data.local.entity.WatchPositionEntity
         WatchPositionEntity::class,
         CloudAccountEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class MoviLishDatabase : RoomDatabase() {

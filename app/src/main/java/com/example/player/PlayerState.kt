@@ -1,8 +1,8 @@
 package com.example.player
 
 enum class AspectRatioMode(val label: String) {
+    FILL_CROP("Penuh Layar (Rasio Asli)"),
     FIT("Muat Layar (Fit)"),
-    FILL_CROP("Penuh Potong (Crop)"),
     RATIO_16_9("16:9 Cinema"),
     RATIO_4_3("4:3 Standar")
 }

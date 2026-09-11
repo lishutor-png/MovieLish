@@ -170,7 +170,9 @@ object SmartMediaScanner {
             MediaStore.Video.Media.DISPLAY_NAME,
             MediaStore.Video.Media.DURATION,
             MediaStore.Video.Media.SIZE,
-            MediaStore.Video.Media.DATE_ADDED
+            MediaStore.Video.Media.DATE_ADDED,
+            MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Video.Media.DATA
         )
 
         val urisToScan = listOf(
@@ -193,14 +195,40 @@ object SmartMediaScanner {
                     val nameCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
                     val durationCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
                     val sizeCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                    val dateCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                    val dateAddedCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+                    val bucketCol = it.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                    val dataCol = it.getColumnIndex(MediaStore.Video.Media.DATA)
 
                     while (it.moveToNext()) {
                         val mediaStoreId = it.getLong(idCol)
                         val displayName = it.getString(nameCol) ?: "Video_$mediaStoreId"
                         val durationMs = it.getLong(durationCol)
                         val sizeBytes = it.getLong(sizeCol)
-                        val dateAdded = it.getLong(dateCol) * 1000L
+                        val dateAdded = it.getLong(dateAddedCol) * 1000L
+
+                        val bucketName = if (bucketCol != -1) it.getString(bucketCol) else null
+                        val dataPath = if (dataCol != -1) it.getString(dataCol) else null
+
+                        val folderName = when {
+                            !bucketName.isNullOrBlank() -> bucketName
+                            !dataPath.isNullOrBlank() -> {
+                                try {
+                                    java.io.File(dataPath).parentFile?.name ?: "Video"
+                                } catch (_: Exception) {
+                                    "Video"
+                                }
+                            }
+                            baseUri == MediaStore.Video.Media.INTERNAL_CONTENT_URI -> "Memori Internal"
+                            else -> "Penyimpanan HP"
+                        }
+
+                        val folderPath = dataPath?.let { path ->
+                            try {
+                                java.io.File(path).parent
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
 
                         val contentUri = Uri.withAppendedPath(baseUri, mediaStoreId.toString()).toString()
 
@@ -226,7 +254,9 @@ object SmartMediaScanner {
                                 isOfflineAvailable = true,
                                 releaseYear = meta.releaseYear,
                                 fileSizeFormatted = sizeFormatted,
-                                dateAdded = dateAdded
+                                dateAdded = dateAdded,
+                                folderName = folderName,
+                                folderPath = folderPath
                             )
                         )
                     }
@@ -268,6 +298,15 @@ object SmartMediaScanner {
             val meta = parseFilename(displayName)
             val sizeFormatted = formatFileSize(sizeBytes)
 
+            // Extract folder hint if possible from uri path
+            val folderHint = try {
+                val path = uri.path ?: ""
+                val segments = path.split("/")
+                if (segments.size > 2) segments[segments.size - 2] else "Impor Manual"
+            } catch (_: Exception) {
+                "Impor Manual"
+            }
+
             MediaItemEntity(
                 id = "picked_${UUID.randomUUID()}",
                 title = meta.title,
@@ -283,7 +322,9 @@ object SmartMediaScanner {
                 isOfflineAvailable = true,
                 releaseYear = meta.releaseYear,
                 fileSizeFormatted = sizeFormatted,
-                dateAdded = System.currentTimeMillis()
+                dateAdded = System.currentTimeMillis(),
+                folderName = if (folderHint.isNotBlank() && !folderHint.startsWith("primary") && !folderHint.contains(":")) folderHint else "Impor Manual",
+                folderPath = uri.path
             )
         } catch (e: Exception) {
             e.printStackTrace()

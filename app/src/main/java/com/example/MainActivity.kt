@@ -86,6 +86,8 @@ fun MoviLishApp(viewModel: MainViewModel) {
     val cloudAccounts by viewModel.cloudAccounts.collectAsStateWithLifecycle()
 
     val selectedFilter by viewModel.selectedFilter.collectAsStateWithLifecycle()
+    val selectedFolder by viewModel.selectedFolder.collectAsStateWithLifecycle()
+    val viewMode by viewModel.viewMode.collectAsStateWithLifecycle()
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val nightMode by viewModel.nightMode.collectAsStateWithLifecycle()
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
@@ -306,11 +308,15 @@ fun MoviLishApp(viewModel: MainViewModel) {
                     mediaList = allMedia,
                     watchPositions = watchPositions,
                     selectedFilter = selectedFilter,
+                    selectedFolder = selectedFolder,
+                    viewMode = viewMode,
                     searchQuery = searchQuery,
                     nightMode = nightMode,
                     isScanning = isScanning,
                     scanMessage = scanMessage,
                     onFilterChange = { viewModel.setFilter(it) },
+                    onSelectFolder = { viewModel.selectFolder(it) },
+                    onViewModeChange = { viewModel.setViewMode(it) },
                     onSearchChange = { viewModel.setSearchQuery(it) },
                     onToggleNightMode = {
                         val next = when (nightMode) {

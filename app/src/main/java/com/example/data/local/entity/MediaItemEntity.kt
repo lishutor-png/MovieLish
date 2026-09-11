@@ -23,5 +23,7 @@ data class MediaItemEntity(
     val cloudProvider: String? = null, // "Google Drive", "Dropbox", "OneDrive", "WebDAV"
     val dateAdded: Long = System.currentTimeMillis(),
     val releaseYear: Int? = null,
-    val fileSizeFormatted: String? = null
+    val fileSizeFormatted: String? = null,
+    val folderName: String = "Video",
+    val folderPath: String? = null
 )

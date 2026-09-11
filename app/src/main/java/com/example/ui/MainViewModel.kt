@@ -32,6 +32,11 @@ enum class LibraryFilter {
     TV_SERIES
 }
 
+enum class ViewMode {
+    FOLDERS,
+    ALL_VIDEOS
+}
+
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val database = MoviLishDatabase.getInstance(application)
     private val repository = MediaRepository(database)
@@ -42,6 +47,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _selectedFilter = MutableStateFlow(LibraryFilter.ALL)
     val selectedFilter = _selectedFilter.asStateFlow()
+
+    private val _viewMode = MutableStateFlow(ViewMode.FOLDERS)
+    val viewMode = _viewMode.asStateFlow()
+
+    private val _selectedFolder = MutableStateFlow<String?>(null)
+    val selectedFolder = _selectedFolder.asStateFlow()
 
     private val _nightMode = MutableStateFlow(NightModeOption.DARK)
     val nightMode = _nightMode.asStateFlow()
@@ -126,6 +137,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectSeries(seriesName: String?) {
         _selectedSeriesName.value = seriesName
+    }
+
+    fun selectFolder(folderName: String?) {
+        _selectedFolder.value = folderName
+    }
+
+    fun setViewMode(mode: ViewMode) {
+        _viewMode.value = mode
     }
 
     fun playMedia(media: MediaItemEntity) {

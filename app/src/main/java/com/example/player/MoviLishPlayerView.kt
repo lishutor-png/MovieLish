@@ -125,7 +125,10 @@ fun MoviLishPlayerView(
     var currentPositionMs by remember { mutableLongStateOf(initialPositionMs) }
     var totalDurationMs by remember { mutableLongStateOf(media.durationMs) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
-    var aspectRatioMode by remember { mutableStateOf(AspectRatioMode.FIT) }
+    var aspectRatioMode by remember { mutableStateOf(AspectRatioMode.FILL_CROP) }
+    var videoWidth by remember { mutableIntStateOf(0) }
+    var videoHeight by remember { mutableIntStateOf(0) }
+    var textureViewRef by remember { mutableStateOf<TextureView?>(null) }
 
     // Audio Mute State
     var isMuted by remember { mutableStateOf(false) }
@@ -343,71 +346,91 @@ fun MoviLishPlayerView(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            val videoModifier = when (aspectRatioMode) {
-                AspectRatioMode.FIT -> Modifier.fillMaxSize()
-                AspectRatioMode.FILL_CROP -> Modifier.fillMaxSize()
-                AspectRatioMode.RATIO_16_9 -> Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-                AspectRatioMode.RATIO_4_3 -> Modifier.fillMaxWidth().aspectRatio(4f / 3f)
-            }
-
             AndroidView(
                 factory = { ctx ->
-                    TextureView(ctx).apply {
-                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                            override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
-                                val surface = Surface(surfaceTexture)
-                                val player = MediaPlayer().apply {
-                                    setSurface(surface)
-                                    try {
-                                        setDataSource(ctx, Uri.parse(media.fileUri))
-                                        prepareAsync()
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
+                    val textureView = TextureView(ctx)
+                    textureViewRef = textureView
+                    textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                            val surface = Surface(surfaceTexture)
+                            val player = MediaPlayer().apply {
+                                setSurface(surface)
+                                try {
+                                    setDataSource(ctx, Uri.parse(media.fileUri))
+                                    prepareAsync()
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                }
+                                setOnVideoSizeChangedListener { _, w, h ->
+                                    if (w > 0 && h > 0) {
+                                        videoWidth = w
+                                        videoHeight = h
+                                        textureView.post {
+                                            applyVideoTransform(textureView, w, h, aspectRatioMode)
+                                        }
                                     }
-                                    setOnPreparedListener { mp ->
-                                        isPrepared = true
+                                }
+                                setOnPreparedListener { mp ->
+                                    isPrepared = true
+                                    isBuffering = false
+                                    totalDurationMs = mp.duration.toLong()
+                                    val vw = mp.videoWidth
+                                    val vh = mp.videoHeight
+                                    if (vw > 0 && vh > 0) {
+                                        videoWidth = vw
+                                        videoHeight = vh
+                                    }
+                                    textureView.post {
+                                        applyVideoTransform(textureView, videoWidth, videoHeight, aspectRatioMode)
+                                    }
+                                    if (initialPositionMs in 1000 until totalDurationMs - 5000L) {
+                                        mp.seekTo(initialPositionMs.toInt())
+                                    }
+                                    mp.start()
+                                    isPlaying = true
+                                }
+                                setOnBufferingUpdateListener { _, _ -> }
+                                setOnInfoListener { _, what, _ ->
+                                    if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
+                                        isBuffering = true
+                                    } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
                                         isBuffering = false
-                                        totalDurationMs = mp.duration.toLong()
-                                        if (initialPositionMs in 1000 until totalDurationMs - 5000L) {
-                                            mp.seekTo(initialPositionMs.toInt())
-                                        }
-                                        mp.start()
-                                        isPlaying = true
                                     }
-                                    setOnBufferingUpdateListener { _, _ -> }
-                                    setOnInfoListener { _, what, _ ->
-                                        if (what == MediaPlayer.MEDIA_INFO_BUFFERING_START) {
-                                            isBuffering = true
-                                        } else if (what == MediaPlayer.MEDIA_INFO_BUFFERING_END) {
-                                            isBuffering = false
-                                        }
-                                        true
-                                    }
-                                    setOnCompletionListener {
-                                        isPlaying = false
-                                        onSavePosition(totalDurationMs, totalDurationMs, true)
-                                    }
+                                    true
                                 }
-                                mediaPlayer = player
-                            }
-
-                            override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {}
-                            override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
-                                mediaPlayer?.let { player ->
-                                    val pos = player.currentPosition.toLong()
-                                    val dur = player.duration.toLong().coerceAtLeast(1L)
-                                    onSavePosition(pos, dur, pos >= dur - 5000L)
-                                    player.stop()
-                                    player.release()
+                                setOnCompletionListener {
+                                    isPlaying = false
+                                    onSavePosition(totalDurationMs, totalDurationMs, true)
                                 }
-                                mediaPlayer = null
-                                return true
                             }
-                            override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
+                            mediaPlayer = player
+                            textureView.post {
+                                applyVideoTransform(textureView, videoWidth, videoHeight, aspectRatioMode)
+                            }
                         }
+
+                        override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+                            textureView.post {
+                                applyVideoTransform(textureView, videoWidth, videoHeight, aspectRatioMode)
+                            }
+                        }
+                        override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                            mediaPlayer?.let { player ->
+                                val pos = player.currentPosition.toLong()
+                                val dur = player.duration.toLong().coerceAtLeast(1L)
+                                onSavePosition(pos, dur, pos >= dur - 5000L)
+                                player.stop()
+                                player.release()
+                            }
+                            mediaPlayer = null
+                            textureViewRef = null
+                            return true
+                        }
+                        override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) {}
                     }
+                    textureView
                 },
-                modifier = videoModifier
+                modifier = Modifier.fillMaxSize()
             )
         }
 
@@ -827,10 +850,15 @@ fun MoviLishPlayerView(
                     IconButton(
                         onClick = {
                             aspectRatioMode = when (aspectRatioMode) {
-                                AspectRatioMode.FIT -> AspectRatioMode.FILL_CROP
-                                AspectRatioMode.FILL_CROP -> AspectRatioMode.RATIO_16_9
+                                AspectRatioMode.FILL_CROP -> AspectRatioMode.FIT
+                                AspectRatioMode.FIT -> AspectRatioMode.RATIO_16_9
                                 AspectRatioMode.RATIO_16_9 -> AspectRatioMode.RATIO_4_3
-                                AspectRatioMode.RATIO_4_3 -> AspectRatioMode.FIT
+                                AspectRatioMode.RATIO_4_3 -> AspectRatioMode.FILL_CROP
+                            }
+                            textureViewRef?.let { tv ->
+                                tv.post {
+                                    applyVideoTransform(tv, videoWidth, videoHeight, aspectRatioMode)
+                                }
                             }
                             gestureHudState = PlayerGestureHudState(
                                 gestureType = GestureType.ASPECT_RATIO,
@@ -1210,5 +1238,74 @@ private fun Context.findActivity(): Activity? {
         ctx = ctx.baseContext
     }
     return null
+}
+
+private fun applyVideoTransform(
+    view: TextureView,
+    vWidth: Int,
+    vHeight: Int,
+    mode: AspectRatioMode
+) {
+    val viewWidth = view.width
+    val viewHeight = view.height
+    if (vWidth <= 0 || vHeight <= 0 || viewWidth <= 0 || viewHeight <= 0) return
+
+    val matrix = android.graphics.Matrix()
+    val videoAspect = vWidth.toFloat() / vHeight.toFloat()
+    val viewAspect = viewWidth.toFloat() / viewHeight.toFloat()
+
+    val scaleX: Float
+    val scaleY: Float
+
+    when (mode) {
+        AspectRatioMode.FILL_CROP -> {
+            // Rasio ukuran asli video digunakan dan otomatis dibesarkan sampai penuh di layar
+            // tanpa distorsi (rasio tetap)
+            if (videoAspect > viewAspect) {
+                // Video lebih lebar: perbesar dimensi X proporsional terhadap tinggi layar
+                scaleX = videoAspect / viewAspect
+                scaleY = 1.0f
+            } else {
+                // Video lebih tinggi: perbesar dimensi Y proporsional terhadap lebar layar
+                scaleX = 1.0f
+                scaleY = viewAspect / videoAspect
+            }
+        }
+        AspectRatioMode.FIT -> {
+            // Muat seluruh frame video di dalam layar dengan rasio asli utuh
+            if (videoAspect > viewAspect) {
+                scaleX = 1.0f
+                scaleY = viewAspect / videoAspect
+            } else {
+                scaleX = videoAspect / viewAspect
+                scaleY = 1.0f
+            }
+        }
+        AspectRatioMode.RATIO_16_9 -> {
+            val targetAspect = 16f / 9f
+            if (targetAspect > viewAspect) {
+                scaleX = 1.0f
+                scaleY = viewAspect / targetAspect
+            } else {
+                scaleX = targetAspect / viewAspect
+                scaleY = 1.0f
+            }
+        }
+        AspectRatioMode.RATIO_4_3 -> {
+            val targetAspect = 4f / 3f
+            if (targetAspect > viewAspect) {
+                scaleX = 1.0f
+                scaleY = viewAspect / targetAspect
+            } else {
+                scaleX = targetAspect / viewAspect
+                scaleY = 1.0f
+            }
+        }
+    }
+
+    val pivotX = viewWidth / 2f
+    val pivotY = viewHeight / 2f
+    matrix.setScale(scaleX, scaleY, pivotX, pivotY)
+    view.setTransform(matrix)
 }
 
