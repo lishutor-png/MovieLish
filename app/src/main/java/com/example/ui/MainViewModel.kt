@@ -93,7 +93,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            repository.initializeCuratedMediaIfNeeded()
+            repository.initializeCuratedMediaIfNeeded(getApplication())
+        }
+    }
+
+    fun importPickedVideo(uri: android.net.Uri) {
+        viewModelScope.launch {
+            val item = repository.importPickedVideo(getApplication(), uri)
+            if (item != null) {
+                _scanMessage.value = "Berhasil menambahkan: ${item.title}"
+            } else {
+                _scanMessage.value = "Gagal memuat video yang dipilih"
+            }
         }
     }
 

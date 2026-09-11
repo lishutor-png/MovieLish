@@ -3,8 +3,10 @@ package com.example.data.repository
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import com.example.data.local.entity.MediaItemEntity
 import com.example.data.model.MediaSource
 import com.example.data.model.MediaType
@@ -158,7 +160,7 @@ object SmartMediaScanner {
     }
 
     /**
-     * Scans Android device MediaStore for local videos
+     * Scans Android device MediaStore for local videos from both Internal and External (SD Card) storage
      */
     fun scanDeviceMediaStore(context: Context): List<MediaItemEntity> {
         val list = mutableListOf<MediaItemEntity>()
@@ -171,64 +173,122 @@ object SmartMediaScanner {
             MediaStore.Video.Media.DATE_ADDED
         )
 
-        val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        try {
-            val cursor: Cursor? = contentResolver.query(
-                uri,
-                projection,
-                null,
-                null,
-                "${MediaStore.Video.Media.DATE_ADDED} DESC"
-            )
+        val urisToScan = listOf(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            MediaStore.Video.Media.INTERNAL_CONTENT_URI
+        )
 
-            cursor?.use {
-                val idCol = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
-                val nameCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
-                val durationCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
-                val sizeCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
-                val dateCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
+        for (baseUri in urisToScan) {
+            try {
+                val cursor: Cursor? = contentResolver.query(
+                    baseUri,
+                    projection,
+                    null,
+                    null,
+                    "${MediaStore.Video.Media.DATE_ADDED} DESC"
+                )
 
-                while (it.moveToNext()) {
-                    val mediaStoreId = it.getLong(idCol)
-                    val displayName = it.getString(nameCol) ?: "Video_$mediaStoreId"
-                    val durationMs = it.getLong(durationCol)
-                    val sizeBytes = it.getLong(sizeCol)
-                    val dateAdded = it.getLong(dateCol) * 1000L
+                cursor?.use {
+                    val idCol = it.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+                    val nameCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+                    val durationCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DURATION)
+                    val sizeCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+                    val dateCol = it.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
 
-                    val contentUri = Uri.withAppendedPath(
-                        MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                        mediaStoreId.toString()
-                    ).toString()
+                    while (it.moveToNext()) {
+                        val mediaStoreId = it.getLong(idCol)
+                        val displayName = it.getString(nameCol) ?: "Video_$mediaStoreId"
+                        val durationMs = it.getLong(durationCol)
+                        val sizeBytes = it.getLong(sizeCol)
+                        val dateAdded = it.getLong(dateCol) * 1000L
 
-                    val meta = parseFilename(displayName)
-                    val sizeFormatted = formatFileSize(sizeBytes)
+                        val contentUri = Uri.withAppendedPath(baseUri, mediaStoreId.toString()).toString()
 
-                    list.add(
-                        MediaItemEntity(
-                            id = "local_$mediaStoreId",
-                            title = meta.title,
-                            mediaType = meta.mediaType,
-                            seriesName = meta.seriesName,
-                            seasonNumber = meta.seasonNumber,
-                            episodeNumber = meta.episodeNumber,
-                            episodeTitle = meta.episodeTitle,
-                            fileUri = contentUri,
-                            format = meta.format,
-                            durationMs = durationMs,
-                            mediaSource = MediaSource.LOCAL,
-                            isOfflineAvailable = true,
-                            releaseYear = meta.releaseYear,
-                            fileSizeFormatted = sizeFormatted,
-                            dateAdded = dateAdded
+                        // Check if already in list
+                        if (list.any { item -> item.fileUri == contentUri }) continue
+
+                        val meta = parseFilename(displayName)
+                        val sizeFormatted = formatFileSize(sizeBytes)
+
+                        list.add(
+                            MediaItemEntity(
+                                id = "local_${baseUri.lastPathSegment}_$mediaStoreId",
+                                title = meta.title,
+                                mediaType = meta.mediaType,
+                                seriesName = meta.seriesName,
+                                seasonNumber = meta.seasonNumber,
+                                episodeNumber = meta.episodeNumber,
+                                episodeTitle = meta.episodeTitle,
+                                fileUri = contentUri,
+                                format = meta.format,
+                                durationMs = durationMs,
+                                mediaSource = MediaSource.LOCAL,
+                                isOfflineAvailable = true,
+                                releaseYear = meta.releaseYear,
+                                fileSizeFormatted = sizeFormatted,
+                                dateAdded = dateAdded
+                            )
                         )
-                    )
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         return list
+    }
+
+    /**
+     * Creates a MediaItemEntity from a user-picked content Uri (e.g. from File Picker)
+     */
+    fun createMediaItemFromUri(context: Context, uri: Uri): MediaItemEntity? {
+        return try {
+            var displayName = "Video_${System.currentTimeMillis()}"
+            var sizeBytes = 0L
+
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (cursor.moveToFirst()) {
+                    if (nameIndex != -1) displayName = cursor.getString(nameIndex) ?: displayName
+                    if (sizeIndex != -1) sizeBytes = cursor.getLong(sizeIndex)
+                }
+            }
+
+            var durationMs = 0L
+            try {
+                val retriever = MediaMetadataRetriever()
+                retriever.setDataSource(context, uri)
+                val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                durationMs = durStr?.toLongOrNull() ?: 0L
+                retriever.release()
+            } catch (_: Exception) {}
+
+            val meta = parseFilename(displayName)
+            val sizeFormatted = formatFileSize(sizeBytes)
+
+            MediaItemEntity(
+                id = "picked_${UUID.randomUUID()}",
+                title = meta.title,
+                mediaType = meta.mediaType,
+                seriesName = meta.seriesName,
+                seasonNumber = meta.seasonNumber,
+                episodeNumber = meta.episodeNumber,
+                episodeTitle = meta.episodeTitle,
+                fileUri = uri.toString(),
+                format = meta.format,
+                durationMs = durationMs,
+                mediaSource = MediaSource.LOCAL,
+                isOfflineAvailable = true,
+                releaseYear = meta.releaseYear,
+                fileSizeFormatted = sizeFormatted,
+                dateAdded = System.currentTimeMillis()
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
     fun formatFileSize(bytes: Long): String {

@@ -31,8 +31,8 @@ fun MoviLishCinemaLogo(
         contentAlignment = Alignment.Center
     ) {
         Image(
-            painter = painterResource(id = R.drawable.ic_movilish_flat_cinema_1789041477653),
-            contentDescription = "MoviLish Flat Cinema Logo",
+            painter = painterResource(id = R.drawable.ic_movilish_logo_simple),
+            contentDescription = "MoviLish Cinema Logo",
             modifier = Modifier.fillMaxSize()
         )
     }

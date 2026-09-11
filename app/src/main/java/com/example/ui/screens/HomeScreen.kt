@@ -25,10 +25,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,6 +79,9 @@ fun HomeScreen(
     onClearScanMessage: () -> Unit,
     onPlayMedia: (MediaItemEntity) -> Unit,
     onSelectSeries: (String) -> Unit,
+    hasStoragePermission: Boolean = true,
+    onRequestPermission: () -> Unit = {},
+    onPickVideo: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Filter & Search
@@ -154,6 +159,22 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // Pick Video from Files / Gallery
+                IconButton(
+                    onClick = onPickVideo,
+                    modifier = Modifier
+                        .background(Color(0x2238BDF8), CircleShape)
+                        .border(1.dp, Color(0x4438BDF8), CircleShape)
+                        .testTag("btn_pick_file")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FolderOpen,
+                        contentDescription = "Buka File Video",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
                 // Smart Media Scanner Button
                 IconButton(
                     onClick = onScanDevice,
@@ -382,32 +403,87 @@ fun HomeScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 40.dp),
+                            .padding(vertical = 36.dp, horizontal = 16.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFF0F172A))
+                                .border(1.dp, Color(0x3338BDF8), RoundedCornerShape(16.dp))
+                                .padding(24.dp)
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Movie,
+                                imageVector = if (!hasStoragePermission) Icons.Default.VideoLibrary else Icons.Default.Movie,
                                 contentDescription = null,
-                                tint = Color(0xFF475569),
-                                modifier = Modifier.size(54.dp)
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(52.dp)
                             )
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = if (searchQuery.isNotEmpty()) "Tidak ada media cocok dengan pencarian" else "Belum ada media terdaftar",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
+                                text = when {
+                                    !hasStoragePermission -> "Izin Akses Video Diperlukan"
+                                    searchQuery.isNotEmpty() -> "Tidak ada video cocok dengan \"$searchQuery\""
+                                    else -> "Penyimpanan Video Kosong"
+                                },
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = onScanDevice,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Pindai Perangkat Sekarang")
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = when {
+                                    !hasStoragePermission -> "Izinkan MoviLish membaca memori internal dan kartu SD eksternal HP Anda agar semua video termuat otomatis."
+                                    searchQuery.isNotEmpty() -> "Coba kata kunci lain atau bersihkan pencarian."
+                                    else -> "Aplikasi ini kosongan tanpa video demo. Semua video akan otomatis ter-load dari memori internal dan kartu memori HP Anda."
+                                },
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            if (!hasStoragePermission) {
+                                Button(
+                                    onClick = onRequestPermission,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.testTag("btn_request_permission")
+                                ) {
+                                    Icon(Icons.Default.VideoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Berikan Izin & Muat Video HP")
+                                }
+                            } else {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Button(
+                                        onClick = onScanDevice,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.testTag("btn_rescan_device")
+                                    ) {
+                                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Pindai Memori HP")
+                                    }
+
+                                    Button(
+                                        onClick = onPickVideo,
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.testTag("btn_pick_manual_video")
+                                    ) {
+                                        Icon(Icons.Default.FolderOpen, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Pilih File Video", color = Color.White)
+                                    }
+                                }
                             }
                         }
                     }

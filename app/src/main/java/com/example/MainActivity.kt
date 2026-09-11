@@ -1,5 +1,8 @@
 package com.example
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -7,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,8 +33,10 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -93,6 +99,46 @@ fun MoviLishApp(viewModel: MainViewModel) {
     val selectedSeriesName by viewModel.selectedSeriesName.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableIntStateOf(0) }
+
+    // Storage Permission Handling (Auto-request & Auto-load from Internal & External Storage)
+    val permissionToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_VIDEO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+    var hasStoragePermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, permissionToRequest) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasStoragePermission = isGranted
+        if (isGranted) {
+            viewModel.scanDeviceLibrary()
+        }
+    }
+
+    // Video File Picker (Manual file selector for picking any video file from internal/external memory)
+    val videoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            viewModel.importPickedVideo(it)
+        }
+    }
+
+    // Auto-prompt permission or auto-scan on initial launch
+    LaunchedEffect(Unit) {
+        if (!hasStoragePermission) {
+            permissionLauncher.launch(permissionToRequest)
+        } else {
+            viewModel.scanDeviceLibrary()
+        }
+    }
 
     // File Picker for External Subtitles (.srt, .vtt)
     val subtitlePickerLauncher = rememberLauncherForActivityResult(
@@ -275,10 +321,19 @@ fun MoviLishApp(viewModel: MainViewModel) {
                         }
                         viewModel.setNightMode(next)
                     },
-                    onScanDevice = { viewModel.scanDeviceLibrary() },
+                    onScanDevice = {
+                        if (!hasStoragePermission) {
+                            permissionLauncher.launch(permissionToRequest)
+                        } else {
+                            viewModel.scanDeviceLibrary()
+                        }
+                    },
                     onClearScanMessage = { viewModel.clearScanMessage() },
                     onPlayMedia = { viewModel.playMedia(it) },
-                    onSelectSeries = { viewModel.selectSeries(it) }
+                    onSelectSeries = { viewModel.selectSeries(it) },
+                    hasStoragePermission = hasStoragePermission,
+                    onRequestPermission = { permissionLauncher.launch(permissionToRequest) },
+                    onPickVideo = { videoPickerLauncher.launch(arrayOf("video/*")) }
                 )
 
                 1 -> CloudStorageScreen(

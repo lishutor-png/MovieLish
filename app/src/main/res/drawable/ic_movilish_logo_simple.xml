@@ -1,0 +1,31 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Clapperboard Top Strip (Color 1: Pure White #FFFFFF) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,22 L78,22 C81.3,22 84,24.7 84,28 L84,36 L12,36 L12,28 C12,24.7 14.7,22 18,22 Z" />
+
+    <!-- Slanted Stripes Negative Cutouts -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M26,22 L34,22 L26,36 L18,36 Z M44,22 L52,22 L44,36 L36,36 Z M62,22 L70,22 L62,36 L54,36 Z" />
+
+    <!-- Clapperboard Body Outline (Color 1: Pure White #FFFFFF) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,40 L84,40 L84,68 C84,72.4 80.4,76 76,76 L20,76 C15.6,76 12,72.4 12,68 Z" />
+
+    <!-- Inner Screen Area Cutout -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M18,44 L78,44 C80.2,44 82,45.8 82,48 L82,66 C82,68.2 80.2,70 78,70 L18,70 C15.8,70 14,68.2 14,66 L14,48 C14,45.8 15.8,44 18,44 Z" />
+
+    <!-- Cinema Play Button (Color 2: Sky Blue #38BDF8) -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M43,49.5 L60,57 L43,64.5 Z" />
+</vector>

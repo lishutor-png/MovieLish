@@ -14,7 +14,8 @@ enum class GestureType {
     SEEK,
     ASPECT_RATIO,
     LOCK_INFO,
-    SLEEP_TIMER
+    SLEEP_TIMER,
+    ORIENTATION
 }
 
 enum class SleepTimerOption(val label: String, val minutes: Int) {

@@ -2,6 +2,8 @@ package com.example.player
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -48,7 +50,9 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
@@ -151,6 +155,56 @@ fun MoviLishPlayerView(
     var singleTapJob by remember { mutableStateOf<Job?>(null) }
     var lastTapTimestamp by remember { mutableLongStateOf(0L) }
     var lastTapPositionX by remember { mutableFloatStateOf(0f) }
+
+    // Screen Orientation Management (Auto-landscape on open, restore on exit, with toggle)
+    val activity = remember(context) { context.findActivity() }
+    var orientationMode by remember { mutableStateOf(ScreenOrientationMode.LANDSCAPE) }
+
+    DisposableEffect(activity) {
+        val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        // Otomatis posisi landscape saat video dibuka
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+
+        onDispose {
+            // Kembalikan ke orientasi asal saat pemutar ditutup
+            activity?.requestedOrientation = originalOrientation
+        }
+    }
+
+    fun toggleOrientation() {
+        val nextMode = when (orientationMode) {
+            ScreenOrientationMode.LANDSCAPE -> ScreenOrientationMode.PORTRAIT
+            ScreenOrientationMode.PORTRAIT -> ScreenOrientationMode.SENSOR
+            ScreenOrientationMode.SENSOR -> ScreenOrientationMode.LANDSCAPE
+        }
+        orientationMode = nextMode
+        when (nextMode) {
+            ScreenOrientationMode.LANDSCAPE -> {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                gestureHudState = PlayerGestureHudState(
+                    gestureType = GestureType.ORIENTATION,
+                    message = "Orientasi: Landscape",
+                    isVisible = true
+                )
+            }
+            ScreenOrientationMode.PORTRAIT -> {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                gestureHudState = PlayerGestureHudState(
+                    gestureType = GestureType.ORIENTATION,
+                    message = "Orientasi: Potret (Portrait)",
+                    isVisible = true
+                )
+            }
+            ScreenOrientationMode.SENSOR -> {
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                gestureHudState = PlayerGestureHudState(
+                    gestureType = GestureType.ORIENTATION,
+                    message = "Orientasi: Otomatis (Sensor)",
+                    isVisible = true
+                )
+            }
+        }
+    }
 
     // Handle Back Press
     BackHandler {
@@ -753,6 +807,22 @@ fun MoviLishPlayerView(
                         )
                     }
 
+                    // Screen Orientation Toggle Button (Landscape / Portrait / Auto)
+                    IconButton(
+                        onClick = { toggleOrientation() },
+                        modifier = Modifier.testTag("btn_orientation_toggle")
+                    ) {
+                        Icon(
+                            imageVector = when (orientationMode) {
+                                ScreenOrientationMode.PORTRAIT -> Icons.Default.StayCurrentPortrait
+                                ScreenOrientationMode.LANDSCAPE -> Icons.Default.ScreenRotation
+                                ScreenOrientationMode.SENSOR -> Icons.Default.ScreenRotation
+                            },
+                            contentDescription = "Ganti Orientasi Layar (${orientationMode.label})",
+                            tint = if (orientationMode == ScreenOrientationMode.PORTRAIT) Color(0xFF38BDF8) else Color.White
+                        )
+                    }
+
                     // Aspect Ratio Button
                     IconButton(
                         onClick = {
@@ -1126,3 +1196,19 @@ fun MoviLishPlayerView(
         }
     }
 }
+
+enum class ScreenOrientationMode(val label: String) {
+    LANDSCAPE("Landscape"),
+    PORTRAIT("Potret (Portrait)"),
+    SENSOR("Otomatis (Sensor)")
+}
+
+private fun Context.findActivity(): Activity? {
+    var ctx = this
+    while (ctx is ContextWrapper) {
+        if (ctx is Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+

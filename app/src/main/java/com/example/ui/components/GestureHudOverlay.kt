@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.VolumeDown
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.filled.VolumeUp
@@ -189,6 +190,41 @@ fun GestureHudOverlay(
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = hudState.message.ifBlank { "Rasio Diubah" },
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        // Screen Orientation Status HUD
+        AnimatedVisibility(
+            visible = hudState.isVisible && hudState.gestureType == GestureType.ORIENTATION,
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(300))
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color(0xEE090D16), RoundedCornerShape(16.dp))
+                    .border(1.dp, Color(0xFF38BDF8), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+                    .testTag("hud_orientation_info"),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ScreenRotation,
+                        contentDescription = "Orientasi Layar",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = hudState.message.ifBlank { "Orientasi Layar" },
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold

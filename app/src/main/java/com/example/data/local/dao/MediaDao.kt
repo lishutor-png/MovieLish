@@ -43,6 +43,9 @@ interface MediaDao {
     @Query("UPDATE media_items SET isOfflineAvailable = :isOffline WHERE id = :id")
     suspend fun updateOfflineStatus(id: String, isOffline: Boolean)
 
+    @Query("DELETE FROM media_items WHERE id LIKE 'demo_%'")
+    suspend fun deleteDemoMedia()
+
     @Query("SELECT COUNT(*) FROM media_items")
     suspend fun getMediaCount(): Int
 }
