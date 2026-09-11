@@ -73,6 +73,28 @@ class MediaRepository(private val database: MoviLishDatabase) {
         watchDao.clearWatchPosition(id)
     }
 
+    suspend fun deleteMediaItems(items: List<MediaItemEntity>, context: Context) = withContext(Dispatchers.IO) {
+        val ids = items.map { it.id }
+        items.forEach { item ->
+            try {
+                if (item.fileUri.startsWith("file://")) {
+                    val file = java.io.File(android.net.Uri.parse(item.fileUri).path ?: "")
+                    if (file.exists()) file.delete()
+                } else if (item.fileUri.startsWith("content://")) {
+                    context.contentResolver.delete(android.net.Uri.parse(item.fileUri), null, null)
+                }
+            } catch (_: Exception) {
+                // Ignore physical file delete failure if read-only or restricted
+            }
+            watchDao.clearWatchPosition(item.id)
+        }
+        mediaDao.deleteMediaByIds(ids)
+    }
+
+    suspend fun deleteSingleMedia(item: MediaItemEntity, context: Context) = withContext(Dispatchers.IO) {
+        deleteMediaItems(listOf(item), context)
+    }
+
     suspend fun scanDeviceLibrary(context: Context): Int = withContext(Dispatchers.IO) {
         val scanned = SmartMediaScanner.scanDeviceMediaStore(context)
         if (scanned.isNotEmpty()) {

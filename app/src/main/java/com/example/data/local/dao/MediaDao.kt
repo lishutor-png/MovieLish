@@ -40,6 +40,9 @@ interface MediaDao {
     @Query("DELETE FROM media_items WHERE id = :id")
     suspend fun deleteMediaById(id: String)
 
+    @Query("DELETE FROM media_items WHERE id IN (:ids)")
+    suspend fun deleteMediaByIds(ids: List<String>)
+
     @Query("UPDATE media_items SET isOfflineAvailable = :isOffline WHERE id = :id")
     suspend fun updateOfflineStatus(id: String, isOffline: Boolean)
 

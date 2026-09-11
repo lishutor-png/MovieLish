@@ -28,12 +28,8 @@ fun MoviLishCinemaLogo(
         modifier = modifier
             .size(size)
             .clip(CircleShape)
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(Color(0xFF1E293B), Color(0xFF0F172A))
-                )
-            )
-            .border(1.dp, Color(0x5538BDF8), CircleShape)
+            .background(Color(0xFF000000))
+            .border(1.dp, Color(0x6638BDF8), CircleShape)
             .padding(size * 0.12f),
         contentAlignment = Alignment.Center
     ) {

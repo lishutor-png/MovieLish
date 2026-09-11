@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.graphics.SurfaceTexture
 import android.media.AudioManager
+import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.net.Uri
@@ -19,6 +20,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -54,6 +57,8 @@ import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,6 +93,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.data.local.entity.MediaItemEntity
 import com.example.data.model.SubtitleCue
 import com.example.data.model.SubtitleStyleConfig
@@ -97,9 +105,11 @@ import com.example.ui.components.SleepTimerSheet
 import com.example.ui.components.SubtitleOverlay
 import com.example.ui.components.SubtitleSettingsSheet
 import com.example.ui.components.formatTime
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 @Composable
@@ -159,22 +169,85 @@ fun MoviLishPlayerView(
     var lastTapTimestamp by remember { mutableLongStateOf(0L) }
     var lastTapPositionX by remember { mutableFloatStateOf(0f) }
 
-    // Screen Orientation Management (Auto-landscape on open, restore on exit, with toggle)
+    // Screen Orientation Management (Auto-detects video orientation, can be overridden manually)
     val activity = remember(context) { context.findActivity() }
     var orientationMode by remember { mutableStateOf(ScreenOrientationMode.LANDSCAPE) }
+    var hasManuallyChangedOrientation by remember { mutableStateOf(false) }
+
+    // Status Bar visibility management (user-selectable option)
+    var showStatusBar by remember { mutableStateOf(false) }
+
+    // Apply status bar show/hide
+    LaunchedEffect(showStatusBar, activity) {
+        activity?.window?.let { window ->
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            if (showStatusBar) {
+                insetsController.show(WindowInsetsCompat.Type.statusBars())
+            } else {
+                insetsController.hide(WindowInsetsCompat.Type.statusBars())
+                insetsController.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+    }
 
     DisposableEffect(activity) {
         val originalOrientation = activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        // Otomatis posisi landscape saat video dibuka
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-
         onDispose {
-            // Kembalikan ke orientasi asal saat pemutar ditutup
+            // Restore original orientation and status bar when player exits
             activity?.requestedOrientation = originalOrientation
+            activity?.window?.let { window ->
+                val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.show(WindowInsetsCompat.Type.statusBars())
+            }
+        }
+    }
+
+    // Proactive Auto-detection of video aspect ratio/orientation from file metadata
+    LaunchedEffect(media.fileUri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val retriever = MediaMetadataRetriever()
+                val uri = Uri.parse(media.fileUri)
+                if (media.fileUri.startsWith("content://")) {
+                    retriever.setDataSource(context, uri)
+                } else if (media.fileUri.startsWith("file://") && uri.path != null) {
+                    retriever.setDataSource(uri.path)
+                } else {
+                    retriever.setDataSource(media.fileUri, HashMap())
+                }
+                val widthStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                val heightStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                retriever.release()
+
+                val rawW = widthStr?.toIntOrNull() ?: 0
+                val rawH = heightStr?.toIntOrNull() ?: 0
+                val rot = rotationStr?.toIntOrNull() ?: 0
+                val effectiveW = if (rot == 90 || rot == 270) rawH else rawW
+                val effectiveH = if (rot == 90 || rot == 270) rawW else rawH
+
+                if (effectiveW > 0 && effectiveH > 0) {
+                    withContext(Dispatchers.Main) {
+                        if (!hasManuallyChangedOrientation) {
+                            if (effectiveH > effectiveW) {
+                                orientationMode = ScreenOrientationMode.PORTRAIT
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                orientationMode = ScreenOrientationMode.LANDSCAPE
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                // Handled gracefully in onPrepared and onVideoSizeChanged
+            }
         }
     }
 
     fun toggleOrientation() {
+        hasManuallyChangedOrientation = true
         val nextMode = when (orientationMode) {
             ScreenOrientationMode.LANDSCAPE -> ScreenOrientationMode.PORTRAIT
             ScreenOrientationMode.PORTRAIT -> ScreenOrientationMode.SENSOR
@@ -228,15 +301,11 @@ fun MoviLishPlayerView(
         }
     }
 
-    // Load active subtitle cues
+    // Load active subtitle cues (AI subtitles removed, only real parsed subtitles)
     LaunchedEffect(selectedSubtitleTrackId, subtitleTracks, totalDurationMs) {
         val track = subtitleTracks.find { it.id == selectedSubtitleTrackId }
         activeCues = if (track != null) {
-            if (track.isAutoGenerated) {
-                SubtitleParser.generateAutoSubtitles(media.title, totalDurationMs, track.language)
-            } else {
-                SubtitleParser.parse(track.uriOrContent, track.format)
-            }
+            SubtitleParser.parse(track.uriOrContent, track.format)
         } else {
             emptyList()
         }
@@ -365,6 +434,15 @@ fun MoviLishPlayerView(
                                     if (w > 0 && h > 0) {
                                         videoWidth = w
                                         videoHeight = h
+                                        if (!hasManuallyChangedOrientation) {
+                                            if (h > w) {
+                                                orientationMode = ScreenOrientationMode.PORTRAIT
+                                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                            } else {
+                                                orientationMode = ScreenOrientationMode.LANDSCAPE
+                                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                            }
+                                        }
                                         textureView.post {
                                             applyVideoTransform(textureView, w, h, aspectRatioMode)
                                         }
@@ -379,6 +457,15 @@ fun MoviLishPlayerView(
                                     if (vw > 0 && vh > 0) {
                                         videoWidth = vw
                                         videoHeight = vh
+                                        if (!hasManuallyChangedOrientation) {
+                                            if (vh > vw) {
+                                                orientationMode = ScreenOrientationMode.PORTRAIT
+                                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                            } else {
+                                                orientationMode = ScreenOrientationMode.LANDSCAPE
+                                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                            }
+                                        }
                                     }
                                     textureView.post {
                                         applyVideoTransform(textureView, videoWidth, videoHeight, aspectRatioMode)
@@ -672,48 +759,6 @@ fun MoviLishPlayerView(
             }
         }
 
-        // Lock Toggle Button at Center Left
-        AnimatedVisibility(
-            visible = showControls || isLocked,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 16.dp)
-        ) {
-            IconButton(
-                onClick = {
-                    isLocked = !isLocked
-                    if (isLocked) {
-                        showControls = false
-                        gestureHudState = PlayerGestureHudState(
-                            gestureType = GestureType.LOCK_INFO,
-                            message = "Layar Dikunci",
-                            isVisible = true
-                        )
-                    } else {
-                        showControls = true
-                        gestureHudState = PlayerGestureHudState(
-                            gestureType = GestureType.LOCK_INFO,
-                            message = "Kunci Terbuka",
-                            isVisible = true
-                        )
-                    }
-                },
-                modifier = Modifier
-                    .background(Color(0xCC090D16), CircleShape)
-                    .border(1.dp, if (isLocked) Color(0xFFFBBF24) else Color(0x33FFFFFF), CircleShape)
-                    .size(48.dp)
-                    .testTag("btn_lock_screen")
-            ) {
-                Icon(
-                    imageVector = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen,
-                    contentDescription = if (isLocked) "Buka Kunci" else "Kunci Layar",
-                    tint = if (isLocked) Color(0xFFFBBF24) else Color.White
-                )
-            }
-        }
-
         // Full Controls Overlay (Hidden when locked)
         AnimatedVisibility(
             visible = showControls && !isLocked,
@@ -798,8 +843,14 @@ fun MoviLishPlayerView(
                         )
                     }
 
-                    // Mute / Unmute Quick Audio Button
-                    IconButton(
+                    Row(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .horizontalScroll(rememberScrollState()),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Mute / Unmute Quick Audio Button
+                        IconButton(
                         onClick = {
                             if (isMuted) {
                                 val restoreVol = if (savedVolumeBeforeMute > 0) savedVolumeBeforeMute else (maxVolume / 2)
@@ -875,6 +926,45 @@ fun MoviLishPlayerView(
                         )
                     }
 
+                    // Status Bar Toggle Button (Show/Hide System Status Bar)
+                    IconButton(
+                        onClick = {
+                            showStatusBar = !showStatusBar
+                            gestureHudState = PlayerGestureHudState(
+                                gestureType = GestureType.ASPECT_RATIO,
+                                message = if (showStatusBar) "Bilah Status: Tampil" else "Bilah Status: Disembunyikan",
+                                isVisible = true
+                            )
+                        },
+                        modifier = Modifier.testTag("btn_toggle_status_bar")
+                    ) {
+                        Icon(
+                            imageVector = if (showStatusBar) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = if (showStatusBar) "Sembunyikan Bilah Status" else "Tampilkan Bilah Status",
+                            tint = if (showStatusBar) Color(0xFF38BDF8) else Color.White
+                        )
+                    }
+
+                    // Lock Screen Button (Moved to top bar with subtitle & other controls)
+                    IconButton(
+                        onClick = {
+                            isLocked = true
+                            showControls = false
+                            gestureHudState = PlayerGestureHudState(
+                                gestureType = GestureType.LOCK_INFO,
+                                message = "Layar Dikunci",
+                                isVisible = true
+                            )
+                        },
+                        modifier = Modifier.testTag("btn_lock_screen")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Kunci Layar",
+                            tint = Color.White
+                        )
+                    }
+
                     // Sleep Timer (Bedtime) Button
                     IconButton(
                         onClick = { showSleepTimerSheet = true },
@@ -938,6 +1028,7 @@ fun MoviLishPlayerView(
                                 )
                             }
                         }
+                    }
                     }
                 }
 

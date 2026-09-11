@@ -339,7 +339,9 @@ fun MoviLishApp(viewModel: MainViewModel) {
                     onSelectSeries = { viewModel.selectSeries(it) },
                     hasStoragePermission = hasStoragePermission,
                     onRequestPermission = { permissionLauncher.launch(permissionToRequest) },
-                    onPickVideo = { videoPickerLauncher.launch(arrayOf("video/*")) }
+                    onPickVideo = { videoPickerLauncher.launch(arrayOf("video/*")) },
+                    onDeleteSingleMedia = { viewModel.deleteSingleMedia(it) },
+                    onDeleteMultipleMedia = { viewModel.deleteMultipleMedia(it) }
                 )
 
                 1 -> CloudStorageScreen(

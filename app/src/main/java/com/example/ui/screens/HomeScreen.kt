@@ -26,15 +26,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -104,11 +109,23 @@ fun HomeScreen(
     hasStoragePermission: Boolean = true,
     onRequestPermission: () -> Unit = {},
     onPickVideo: () -> Unit = {},
+    onDeleteSingleMedia: (MediaItemEntity) -> Unit = {},
+    onDeleteMultipleMedia: (List<MediaItemEntity>) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    // Intercept back button when inside a folder to return to folder list
-    BackHandler(enabled = selectedFolder != null) {
-        onSelectFolder(null)
+    var isMultiSelectMode by remember { mutableStateOf(false) }
+    var selectedMediaIds by remember { mutableStateOf(setOf<String>()) }
+    var itemToDeleteSingle by remember { mutableStateOf<MediaItemEntity?>(null) }
+    var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+
+    // Intercept back button when in multi-select mode or inside a folder
+    BackHandler(enabled = isMultiSelectMode || selectedFolder != null) {
+        if (isMultiSelectMode) {
+            isMultiSelectMode = false
+            selectedMediaIds = emptySet()
+        } else {
+            onSelectFolder(null)
+        }
     }
 
     var sortOrder by remember { mutableStateOf(VideoSortOrder.LATEST) }
@@ -204,8 +221,81 @@ fun HomeScreen(
             .background(if (nightMode == NightModeOption.AMOLED_BLACK) Color.Black else Color(0xFF090D16))
             .testTag("home_screen_root")
     ) {
-        // App Header (or Folder Breadcrumb Header if inside a folder)
-        if (selectedFolder == null) {
+        // App Header (or Multi-Select Action Mode Header or Folder Breadcrumb Header)
+        if (isMultiSelectMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0F172A))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            isMultiSelectMode = false
+                            selectedMediaIds = emptySet()
+                        },
+                        modifier = Modifier.testTag("btn_close_multi_select")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Batal Pilihan",
+                            tint = Color.White
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${selectedMediaIds.size} dipilih",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = {
+                            val allIds = if (selectedFolder != null) {
+                                currentFolderItems.map { it.id }.toSet()
+                            } else {
+                                allFilteredItems.map { it.id }.toSet()
+                            }
+                            selectedMediaIds = if (selectedMediaIds.size == allIds.size) {
+                                emptySet()
+                            } else {
+                                allIds
+                            }
+                        },
+                        modifier = Modifier.testTag("btn_select_all_toggle")
+                    ) {
+                        Text(
+                            text = if (selectedMediaIds.isNotEmpty()) "Batal Semua" else "Pilih Semua",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            if (selectedMediaIds.isNotEmpty()) {
+                                showBatchDeleteConfirm = true
+                            }
+                        },
+                        enabled = selectedMediaIds.isNotEmpty(),
+                        modifier = Modifier.testTag("btn_batch_delete")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Hapus Video Terpilih",
+                            tint = if (selectedMediaIds.isNotEmpty()) Color(0xFFEF4444) else Color(0xFF64748B)
+                        )
+                    }
+                }
+            }
+        } else if (selectedFolder == null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -236,6 +326,21 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Enter Multi-Selection Mode
+                    IconButton(
+                        onClick = { isMultiSelectMode = true },
+                        modifier = Modifier
+                            .background(Color(0xFF1E293B), CircleShape)
+                            .testTag("btn_enter_selection_mode")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Checklist,
+                            contentDescription = "Pilih Beberapa Video",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     // Pick Video from Files
                     IconButton(
                         onClick = onPickVideo,
@@ -350,6 +455,22 @@ fun HomeScreen(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Enter Multi-Selection Mode inside folder
+                    IconButton(
+                        onClick = { isMultiSelectMode = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(Color(0xFF1E293B), CircleShape)
+                            .testTag("btn_enter_selection_mode_folder")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Checklist,
+                            contentDescription = "Pilih Video",
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
                     // Pick Video
                     IconButton(
                         onClick = onPickVideo,
@@ -630,7 +751,30 @@ fun HomeScreen(
                             VideoCard(
                                 media = video,
                                 watchPosition = watchPositions[video.id],
-                                onClick = { onPlayMedia(video) }
+                                onClick = {
+                                    if (isMultiSelectMode) {
+                                        selectedMediaIds = if (selectedMediaIds.contains(video.id)) {
+                                            selectedMediaIds - video.id
+                                        } else {
+                                            selectedMediaIds + video.id
+                                        }
+                                    } else {
+                                        onPlayMedia(video)
+                                    }
+                                },
+                                isSelectionMode = isMultiSelectMode,
+                                isSelected = selectedMediaIds.contains(video.id),
+                                onToggleSelect = {
+                                    if (!isMultiSelectMode) isMultiSelectMode = true
+                                    selectedMediaIds = if (selectedMediaIds.contains(video.id)) {
+                                        selectedMediaIds - video.id
+                                    } else {
+                                        selectedMediaIds + video.id
+                                    }
+                                },
+                                onDeleteClick = {
+                                    itemToDeleteSingle = video
+                                }
                             )
                         }
                     }
@@ -790,7 +934,30 @@ fun HomeScreen(
                             VideoCard(
                                 media = movie,
                                 watchPosition = watchPositions[movie.id],
-                                onClick = { onPlayMedia(movie) }
+                                onClick = {
+                                    if (isMultiSelectMode) {
+                                        selectedMediaIds = if (selectedMediaIds.contains(movie.id)) {
+                                            selectedMediaIds - movie.id
+                                        } else {
+                                            selectedMediaIds + movie.id
+                                        }
+                                    } else {
+                                        onPlayMedia(movie)
+                                    }
+                                },
+                                isSelectionMode = isMultiSelectMode,
+                                isSelected = selectedMediaIds.contains(movie.id),
+                                onToggleSelect = {
+                                    if (!isMultiSelectMode) isMultiSelectMode = true
+                                    selectedMediaIds = if (selectedMediaIds.contains(movie.id)) {
+                                        selectedMediaIds - movie.id
+                                    } else {
+                                        selectedMediaIds + movie.id
+                                    }
+                                },
+                                onDeleteClick = {
+                                    itemToDeleteSingle = movie
+                                }
                             )
                         }
                     }
@@ -809,6 +976,81 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    // Single Video Delete Dialog
+    if (itemToDeleteSingle != null) {
+        val target = itemToDeleteSingle
+        AlertDialog(
+            onDismissRequest = { itemToDeleteSingle = null },
+            title = {
+                Text("Hapus Video?", fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Text(
+                    "Apakah Anda yakin ingin menghapus '${target?.title}'? File video akan dihapus dari penyimpanan perangkat dan daftar putar.",
+                    color = Color(0xFFCBD5E1)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        itemToDeleteSingle = null
+                        if (target != null) {
+                            onDeleteSingleMedia(target)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    modifier = Modifier.testTag("btn_confirm_delete_single")
+                ) {
+                    Text("Hapus", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDeleteSingle = null }) {
+                    Text("Batal", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF1E293B)
+        )
+    }
+
+    // Batch Delete Dialog
+    if (showBatchDeleteConfirm) {
+        val count = selectedMediaIds.size
+        AlertDialog(
+            onDismissRequest = { showBatchDeleteConfirm = false },
+            title = {
+                Text("Hapus $count Video Sekaligus?", fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Text(
+                    "Apakah Anda yakin ingin menghapus $count video yang dipilih secara permanen dari penyimpanan perangkat?",
+                    color = Color(0xFFCBD5E1)
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targets = mediaList.filter { selectedMediaIds.contains(it.id) }
+                        selectedMediaIds = emptySet()
+                        isMultiSelectMode = false
+                        showBatchDeleteConfirm = false
+                        onDeleteMultipleMedia(targets)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    modifier = Modifier.testTag("btn_confirm_batch_delete")
+                ) {
+                    Text("Hapus Semua ($count)", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text("Batal", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF1E293B)
+        )
     }
 }
 
