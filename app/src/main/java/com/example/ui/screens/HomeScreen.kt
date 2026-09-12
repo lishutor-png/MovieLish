@@ -111,12 +111,16 @@ fun HomeScreen(
     onPickVideo: () -> Unit = {},
     onDeleteSingleMedia: (MediaItemEntity) -> Unit = {},
     onDeleteMultipleMedia: (List<MediaItemEntity>) -> Unit = {},
+    onRenameMedia: (MediaItemEntity, String) -> Unit = { _, _ -> },
+    onRemoveFromContinueWatching: (MediaItemEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var isMultiSelectMode by remember { mutableStateOf(false) }
     var selectedMediaIds by remember { mutableStateOf(setOf<String>()) }
     var itemToDeleteSingle by remember { mutableStateOf<MediaItemEntity?>(null) }
     var showBatchDeleteConfirm by remember { mutableStateOf(false) }
+    var itemToRename by remember { mutableStateOf<MediaItemEntity?>(null) }
+    var renameInputText by remember { mutableStateOf("") }
 
     // Intercept back button when in multi-select mode or inside a folder
     BackHandler(enabled = isMultiSelectMode || selectedFolder != null) {
@@ -774,6 +778,10 @@ fun HomeScreen(
                                 },
                                 onDeleteClick = {
                                     itemToDeleteSingle = video
+                                },
+                                onEditNameClick = {
+                                    itemToRename = video
+                                    renameInputText = video.title
                                 }
                             )
                         }
@@ -795,7 +803,8 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             ContinueWatchingSection(
                                 itemsWithProgress = inProgressItems,
-                                onPlay = onPlayMedia
+                                onPlay = onPlayMedia,
+                                onRemoveFromHistory = onRemoveFromContinueWatching
                             )
                         }
                     }
@@ -869,7 +878,8 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             ContinueWatchingSection(
                                 itemsWithProgress = inProgressItems,
-                                onPlay = onPlayMedia
+                                onPlay = onPlayMedia,
+                                onRemoveFromHistory = onRemoveFromContinueWatching
                             )
                         }
                     }
@@ -957,6 +967,10 @@ fun HomeScreen(
                                 },
                                 onDeleteClick = {
                                     itemToDeleteSingle = movie
+                                },
+                                onEditNameClick = {
+                                    itemToRename = movie
+                                    renameInputText = movie.title
                                 }
                             )
                         }
@@ -1046,6 +1060,79 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showBatchDeleteConfirm = false }) {
+                    Text("Batal", color = Color(0xFF94A3B8))
+                }
+            },
+            containerColor = Color(0xFF1E293B)
+        )
+    }
+
+    // Rename Video Dialog
+    if (itemToRename != null) {
+        val target = itemToRename!!
+        AlertDialog(
+            onDismissRequest = { itemToRename = null },
+            title = {
+                Text("Ubah Nama Video", fontWeight = FontWeight.Bold, color = Color.White)
+            },
+            text = {
+                Column {
+                    Text(
+                        "Masukkan nama baru untuk file video ini:",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = renameInputText,
+                        onValueChange = { renameInputText = it },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF0F172A),
+                            unfocusedContainerColor = Color(0xFF0F172A),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF38BDF8),
+                            unfocusedBorderColor = Color(0xFF475569),
+                            cursorColor = Color(0xFF38BDF8)
+                        ),
+                        trailingIcon = {
+                            if (renameInputText.isNotEmpty()) {
+                                IconButton(onClick = { renameInputText = "" }) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Hapus teks",
+                                        tint = Color(0xFF94A3B8),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_rename_video")
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newTitle = renameInputText.trim()
+                        if (newTitle.isNotEmpty()) {
+                            onRenameMedia(target, newTitle)
+                        }
+                        itemToRename = null
+                    },
+                    enabled = renameInputText.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                    modifier = Modifier.testTag("btn_confirm_rename")
+                ) {
+                    Text("Simpan", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToRename = null }) {
                     Text("Batal", color = Color(0xFF94A3B8))
                 }
             },

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Tv
@@ -62,7 +63,8 @@ fun VideoCard(
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onToggleSelect: (() -> Unit)? = null,
-    onDeleteClick: (() -> Unit)? = null
+    onDeleteClick: (() -> Unit)? = null,
+    onEditNameClick: (() -> Unit)? = null
 ) {
     val progress = if (watchPosition != null && watchPosition.durationMs > 0) {
         (watchPosition.positionMs.toFloat() / watchPosition.durationMs.toFloat()).coerceIn(0f, 1f)
@@ -276,19 +278,43 @@ fun VideoCard(
                         modifier = Modifier.weight(1f)
                     )
 
-                    if (!isSelectionMode && onDeleteClick != null) {
-                        IconButton(
-                            onClick = onDeleteClick,
-                            modifier = Modifier
-                                .size(28.dp)
-                                .testTag("btn_delete_video_${media.id}")
+                    if (!isSelectionMode) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.DeleteOutline,
-                                contentDescription = "Hapus Video",
-                                tint = Color(0xFFEF4444),
-                                modifier = Modifier.size(18.dp)
-                            )
+                            if (onEditNameClick != null) {
+                                IconButton(
+                                    onClick = onEditNameClick,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color(0x1A38BDF8), CircleShape)
+                                        .testTag("btn_edit_video_${media.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Ubah Nama Video",
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            if (onDeleteClick != null) {
+                                IconButton(
+                                    onClick = onDeleteClick,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(Color(0x1AEF4444), CircleShape)
+                                        .testTag("btn_delete_video_${media.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteOutline,
+                                        contentDescription = "Hapus Video",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }

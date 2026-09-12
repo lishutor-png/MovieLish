@@ -341,7 +341,9 @@ fun MoviLishApp(viewModel: MainViewModel) {
                     onRequestPermission = { permissionLauncher.launch(permissionToRequest) },
                     onPickVideo = { videoPickerLauncher.launch(arrayOf("video/*")) },
                     onDeleteSingleMedia = { viewModel.deleteSingleMedia(it) },
-                    onDeleteMultipleMedia = { viewModel.deleteMultipleMedia(it) }
+                    onDeleteMultipleMedia = { viewModel.deleteMultipleMedia(it) },
+                    onRenameMedia = { item, newName -> viewModel.renameMedia(item, newName) },
+                    onRemoveFromContinueWatching = { viewModel.removeFromContinueWatching(it.id) }
                 )
 
                 1 -> CloudStorageScreen(

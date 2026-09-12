@@ -261,6 +261,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun renameMedia(item: MediaItemEntity, newTitle: String) {
+        viewModelScope.launch {
+            val success = repository.renameMedia(item, newTitle, getApplication())
+            if (success) {
+                _scanMessage.value = "Nama video berhasil diubah menjadi '$newTitle'"
+            }
+        }
+    }
+
+    fun removeFromContinueWatching(mediaId: String) {
+        viewModelScope.launch {
+            repository.removeWatchProgress(mediaId)
+            _scanMessage.value = "Dihapus dari daftar Lanjutkan Menonton"
+        }
+    }
+
     fun closePlayer() {
         _activePlayingMedia.value = null
     }

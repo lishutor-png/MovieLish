@@ -95,6 +95,44 @@ class MediaRepository(private val database: MoviLishDatabase) {
         deleteMediaItems(listOf(item), context)
     }
 
+    suspend fun removeWatchProgress(mediaId: String) = withContext(Dispatchers.IO) {
+        watchDao.clearWatchPosition(mediaId)
+    }
+
+    suspend fun renameMedia(item: MediaItemEntity, newTitle: String, context: Context): Boolean = withContext(Dispatchers.IO) {
+        val trimmed = newTitle.trim()
+        if (trimmed.isEmpty()) return@withContext false
+
+        var updatedFileUri = item.fileUri
+        var updatedFolderPath = item.folderPath
+
+        try {
+            if (item.fileUri.startsWith("file://")) {
+                val oldFile = java.io.File(android.net.Uri.parse(item.fileUri).path ?: "")
+                if (oldFile.exists()) {
+                    val ext = oldFile.extension
+                    val newFileName = if (ext.isNotEmpty()) "$trimmed.$ext" else trimmed
+                    val newFile = java.io.File(oldFile.parentFile, newFileName)
+                    if (oldFile.renameTo(newFile)) {
+                        updatedFileUri = "file://${newFile.absolutePath}"
+                        updatedFolderPath = newFile.parent ?: item.folderPath
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Keep existing path if physical file rename is restricted by OS
+        }
+
+        mediaDao.insertMedia(
+            item.copy(
+                title = trimmed,
+                fileUri = updatedFileUri,
+                folderPath = updatedFolderPath
+            )
+        )
+        true
+    }
+
     suspend fun scanDeviceLibrary(context: Context): Int = withContext(Dispatchers.IO) {
         val scanned = SmartMediaScanner.scanDeviceMediaStore(context)
         if (scanned.isNotEmpty()) {

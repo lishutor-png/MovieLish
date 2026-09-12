@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,11 +20,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,7 +49,8 @@ import com.example.data.local.entity.WatchPositionEntity
 fun ContinueWatchingSection(
     itemsWithProgress: List<Pair<MediaItemEntity, WatchPositionEntity>>,
     onPlay: (MediaItemEntity) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRemoveFromHistory: ((MediaItemEntity) -> Unit)? = null
 ) {
     if (itemsWithProgress.isEmpty()) return
 
@@ -117,17 +121,38 @@ fun ContinueWatchingSection(
                             )
                             // Play Button in center
                             Box(
-                                modifier = Modifier
-                                    .align(Alignment.Center)
-                                    .background(Color(0xCC0284C7), CircleShape)
-                                    .padding(8.dp)
+                                 modifier = Modifier
+                                     .align(Alignment.Center)
+                                     .background(Color(0xCC0284C7), CircleShape)
+                                     .padding(8.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = "Lanjutkan",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(22.dp)
-                                )
+                                 Icon(
+                                     imageVector = Icons.Default.PlayArrow,
+                                     contentDescription = "Lanjutkan",
+                                     tint = Color.White,
+                                     modifier = Modifier.size(22.dp)
+                                 )
+                            }
+
+                            // Remove from Continue Watching history button
+                            if (onRemoveFromHistory != null) {
+                                IconButton(
+                                    onClick = { onRemoveFromHistory(media) },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(6.dp)
+                                        .size(30.dp)
+                                        .background(Color(0xD90F172A), CircleShape)
+                                        .border(1.dp, Color(0x33EF4444), CircleShape)
+                                        .testTag("btn_remove_continue_${media.id}")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Hapus dari Lanjutkan Menonton",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
 
                             // Remaining time badge

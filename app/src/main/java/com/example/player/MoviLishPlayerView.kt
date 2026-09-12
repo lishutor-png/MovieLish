@@ -135,7 +135,7 @@ fun MoviLishPlayerView(
     var currentPositionMs by remember { mutableLongStateOf(initialPositionMs) }
     var totalDurationMs by remember { mutableLongStateOf(media.durationMs) }
     var playbackSpeed by remember { mutableFloatStateOf(1.0f) }
-    var aspectRatioMode by remember { mutableStateOf(AspectRatioMode.FILL_CROP) }
+    var aspectRatioMode by remember { mutableStateOf(AspectRatioMode.FIT) }
     var videoWidth by remember { mutableIntStateOf(0) }
     var videoHeight by remember { mutableIntStateOf(0) }
     var textureViewRef by remember { mutableStateOf<TextureView?>(null) }
